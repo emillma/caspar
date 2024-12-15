@@ -1,0 +1,92 @@
+// CASPAR - Copyright 2024, Emil Martens, SFI Autoship, NTNU
+// This source code is under the Apache 2.0 license found in the LICENSE file.
+#include <cuda_runtime.h>
+#include <cooperative_groups.h>
+#include <cooperative_groups/reduce.h>
+{%for f in include_files%}
+#include "{{f}}"
+{%endfor%}
+namespace cg = cooperative_groups;
+
+extern "C"
+{
+    __global__ void 
+    __launch_bounds__(1024, 1)
+    {{fname}} (
+            {%for arg in arg_names%}
+            {%if arg in scalar%}
+            const {%if arg in double %}double{%else%}float{%endif%} {{arg}},
+            {%else%}
+            const {%if arg in double %}double{%else%}float{%endif%} *const {{arg}},
+            const uint {{arg}}_stride,
+            {%endif%}
+            {%endfor%}
+
+            {%for arg in out_names%}
+            {%if arg in double %}double{%else%}float{%endif%} *const {{arg}},  
+            const uint {{arg}}_stride,
+            {%endfor%}
+    
+            {%for arg in vec_idx+vec_idx_unq%}
+            const uint* const {{arg}}_vec_idxs,
+            {%endfor%}
+            
+            const uint problem_size,
+            const bool set_consts
+        ) {
+
+        const auto block = cg::this_thread_block();
+        const auto gtrank = cg::this_grid().thread_rank();
+        {% if vec_idx%}
+        __shared__ uint shared_int;
+        {%endif%}
+        {% if set(vec_idx+unique).intersection(set(arg_names)) %} 
+        // TODO: make for both float and double
+        __shared__ {{stack_type}} shared_in[1024];
+        {%endif%}
+        {% if atomic_add %}
+        // TODO: make for both float and double
+        __shared__ cuda::atomic<float, cuda::thread_scope_block> shared_out[1024];
+        shared_out[threadIdx.x].store(0.0f);
+        {%endif%}
+
+        {% if stack_size%}
+        {%endif%}
+        {% for arg in vec_idx %}
+        __shared__ uint {{arg}}_vec_idxs_shared[1024];
+        const uint {{arg}}_ord = unique<1024>(
+            {{arg}}_vec_idxs_shared,
+            load_if_valid({{arg}}_vec_idxs, gtrank, problem_size, 0xffffffff),
+            shared_int
+        );
+        {% endfor %}
+        {% for arg in vec_idx_unq %}
+        const uint {{arg}}_vec_idx = {{arg}}_vec_idxs[gtrank];
+        {% endfor %}
+
+        if (gtrank >= problem_size) 
+            return;
+        __syncthreads();
+
+                          
+        const auto warp = cg::coalesced_threads();
+        {%for arg in vec_idx if arg not in unique%}
+        const auto {{arg}}_group = cg::labeled_partition(warp, {{arg}}_ord);
+        {%endfor%}
+
+                    
+        {{stack_type}} stack[{{stack_size}}];
+        {% filter indent(width=8) %}
+        {{lines}}
+        {% endfilter %}
+
+        if (set_consts) {
+            {% filter indent(width=12) %}
+            {{const_lines}}
+            {% endfilter %}
+        }
+    
+
+    }
+}
+
