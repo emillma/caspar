@@ -33,8 +33,7 @@ class Func:
 
     args: tuple[Var, ...]
     outs: list[Var]
-    n_res: int
-    n_res = 1
+    n_outs = 1
     data: float | int | str | None = None
     _hash: int | None = None
 
@@ -43,14 +42,10 @@ class Func:
         self.args = args
         self.data = data
         assert isinstance(data, (float, int, str)) or data is None
-        self.outs = [Var(self, i) for i in range(self.n_res)]
+        self.outs = [Var(self, i) for i in range(self.n_outs)]
         assert isinstance(self.args, tuple)
         # assert isinstance(self.outs, tuple)
         assert all([isinstance(arg, Var) for arg in self.args])
-
-    @property
-    def n_outs(self):
-        return len(self.outs)
 
     @property
     def n_args(self):

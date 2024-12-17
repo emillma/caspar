@@ -1,7 +1,7 @@
 # CASPAR - Copyright 2024, Emil Martens, SFI Autoship, NTNU
 # This source code is under the Apache 2.0 license found in the LICENSE file.
 import torch
-from caspar import torch_tools as tt
+from src import torch_tools as tt
 
 from . import get_n_matches, get_n_ops, get_ops, evaluate
 
@@ -10,7 +10,6 @@ class MTM:
     """res = mat @ mat.t()"""
 
     def __init__(self, indices: torch.Tensor, shape: tuple[int, int]):
-
         # Check if indices are a column-major sorted 2D tensor
         # assert (indices.view(torch.long).sort()[0] == indices.view(torch.long)).all()
 

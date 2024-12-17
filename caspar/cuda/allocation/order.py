@@ -84,7 +84,7 @@ class Solver:
             self.regmap[var] = self.available_regs.pop()
 
     def remove_contrib(self, func: Func, var: Var):
-        # print("Remove contrib: ", func, var)
+        print("Remove contrib: ", func, var)
         assert var not in self.missing_arg[func]
         self.missing_contrib[var].remove(func)
         if not self.missing_contrib[var]:
@@ -93,10 +93,25 @@ class Solver:
                 self.live_vars.remove(var)
 
     def check_if_ready(self, func: Func):
-        if func not in self.not_ready and (
-            not self.missing_arg[func]
-            or (func.is_acc() and len(self.missing_arg[func]) <= func.n_args - 2)
-        ):
+
+        if func not in self.not_ready:
+            return
+
+        if func.is_acc():
+            if func.is_fma():
+                n_other = sum(not a.func.is_fmaprod() for a in func.args)
+                ready = len(self.missing_arg[func]) <= func.n_args - min(2, n_other)
+            elif func.is_fmaprod():
+                ready = len(self.missing_arg[func]) <= func.n_args - 2
+                ready &= self.fma_parents[func] in self.started or func.n_args >= 2
+            else:
+                ready = len(self.missing_arg[func]) <= func.n_args - 1
+        else:
+            ready = not self.missing_arg[func]
+
+        if ready:
+            if func.is_fmaprod():
+                self.check_if_ready(self.fma_parents[func])
             self.not_ready.remove(func)
             self.ready.add(func)
 
@@ -117,6 +132,13 @@ class Solver:
                     self.accumulate(contrib, out)
                 self.check_if_ready(contrib)
 
+    def start_fma(self, func: Func):
+        self.started.add(func)
+        live_args = [v for v in func.args if v in self.live_vars]
+        ordered = sorted(live_args, key=lambda v: not self.missing_contrib[v] <= {func})
+
+
+
     def start_accumulate(self, func: Func):
         self.started.add(func)
         live_args = [v for v in func.args if v in self.live_vars]
@@ -124,14 +146,11 @@ class Solver:
         for var in ordered[:2]:
             self.remove_contrib(func, var)
         self.allocate_regs(func.outs)
-
-        for v in ordered:
+        if func.n_args == 2:
+            self.finish_func(func)
+            return
+        for v in ordered[2:]:
             self.accumulate(func, v)
-        if not func.is_fmaprod() or func.n_args > 2:
-            self.allocate_regs(func.outs)
-        for fma_prod in self.fma2fmaprods.get(func, set()):
-            if fma_prod in self.fma_waiting:
-                self.accumulate(fma_prod, self.fma_waiting.pop(fma_prod))
 
     def accumulate(self, func: Func, var: Var):
         print("Accumulate: ", func, var)
@@ -191,7 +210,10 @@ class Solver:
             self.ready.remove(func)
 
             if func.is_acc():  # accumulate
-                self.start_accumulate(func)
+                if func.is_fma():
+                    self.start_fma(func)
+                else:
+                    self.start_accumulate(func)
             else:
                 self.do_func(func)
 

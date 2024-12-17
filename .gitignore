@@ -1,5 +1,10 @@
-**/__pycache__/
-tmp/
-generated*/
 **/*.cubin
+**/*.egg-info/
+
+**/__pycache__/
+.devcontainer/
+.mypy_cache/
+
+tmp/
+generated/
 data/

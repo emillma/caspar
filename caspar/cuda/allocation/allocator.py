@@ -52,7 +52,6 @@ class Problem:
         self.fix_fma()
         self.fix_sincos()
         # self.squeeze()
-        print(self.root_funcs)
         None
 
     def funcs(self, ftype: Type[Func] | None = None) -> Generator[Func, None, None]:
@@ -133,7 +132,6 @@ class Problem:
 
     def fix_div(self) -> None:
         for var, funcs in self.dependencies().items():
-
             if not (
                 var.func
                 and len(funcs) == 1

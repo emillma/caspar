@@ -1,0 +1,98 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "caspar"
+description = "CUDA Accelerated for Symbolic Programming with Adaptive Reordering"
+authors = [{ name = "Emil Martens", email = "emil.martens@gmail.com" }]
+license = { text = "Apache 2.0" }
+keywords = [
+  "python",
+  "optimization",
+  "code-generation",
+  "slam",
+  "symbolic-computation",
+]
+
+requires-python = ">=3.11"
+dependencies = [
+  "numpy",
+  "symforce",
+  "torch",
+  "numba",
+  # "f2py",
+  # "numpy-config",
+  # Add your project dependencies here
+  # "requests>=2.25.1",
+]
+
+dynamic = ["version", "readme", "optional-dependencies"]
+
+[tool.setuptools.dynamic]
+version = { attr = "caspar.__version__" }
+readme = { file = "README.md", content-type = "text/markdown" }
+# [project.urls]
+# "Bug Tracker" = "https://github.com/symforce-org/symforce/issues"
+# Source = "https://github.com/symforce-org/symforce"
+
+[tool.setuptools.packages.find]
+include = ["caspar"]
+# --------------------------------------------------------------------------------
+# Ruff
+# --------------------------------------------------------------------------------
+
+[tool.ruff]
+line-length = 100
+exclude = ["third_party", "build", ".eggs"]
+extend-include = ["*.ipynb"]
+
+[tool.ruff.lint]
+select = [
+  "I",      # isort
+  "RUF100", # unused-noqa
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["sym", "symforce"]
+force-single-line = true
+section-order = [
+  "future",
+  "standard-library",
+  "third-party",
+  "generated",
+  "first-party",
+  "local-folder",
+]
+
+[tool.ruff.lint.isort.sections]
+"generated" = ["lcmtypes"]
+
+# --------------------------------------------------------------------------------
+# Mypy
+# --------------------------------------------------------------------------------
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_configs = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+mypy_path = ["."]
+explicit_package_bases = true
+
+[[tool.mypy.overrides]]
+module = [
+  "numba.*",
+  "ruff.*",
+  "numpy.*",
+  "scipy.*",
+  "symforce.*",
+  "symengine.*",
+  "sympy.*",
+  "torch.*",     # We don't require torch to be installed
+]
+ignore_missing_imports = true
+
+# [[tool.mypy.overrides]]
+# module = "lcmtypes"
+# follow_imports = "silent"

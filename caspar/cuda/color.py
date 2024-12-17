@@ -1,10 +1,8 @@
 # CASPAR - Copyright 2024, Emil Martens, SFI Autoship, NTNU
 # This source code is under the Apache 2.0 license found in the LICENSE file.
 import networkx as nx
-from symforce.ops import LieGroupOps as Ops
-import symforce.symbolic as sf
 
-from symforce.notebook_util import print_expression_tree
+from symforce.ops import LieGroupOps as Ops
 
 
 def color(exprs):
