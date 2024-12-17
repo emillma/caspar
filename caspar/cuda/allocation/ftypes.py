@@ -30,15 +30,13 @@ class Var:
 
 
 class Func:
-
     args: tuple[Var, ...]
     outs: list[Var]
     n_outs = 1
     data: float | int | str | None = None
     _hash: int | None = None
 
-    def __init__(self, *args: Var, data=None):
-
+    def __init__(self, *args: Var, data=None) -> None:
         self.args = args
         self.data = data
         assert isinstance(data, (float, int, str)) or data is None
@@ -48,7 +46,7 @@ class Func:
         assert all([isinstance(arg, Var) for arg in self.args])
 
     @property
-    def n_args(self):
+    def n_args(self) -> int:
         return len(self.args)
 
     def rebind(self, var: Var, idx: int = 0):
@@ -56,13 +54,13 @@ class Func:
         var.idx = idx
         self.outs[idx] = var
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx) -> Var:
         return self.outs[idx]
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{self.__class__.__name__}({','.join(map(str, self.args))})"
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         if self._hash is None:
             if isinstance(self, Store):
                 self._hash = random.randint(0, 1 << 64)
@@ -73,82 +71,82 @@ class Func:
     def __eq__(self, other):
         return isinstance(other, Func) and hash(self) == hash(other)
 
-    def is_write(self):
+    def is_write(self) -> bool:
         return isinstance(self, Write)
 
     def is_load(self):
         return isinstance(self, Read)
 
-    def is_store(self):
+    def is_store(self) -> bool:
         return isinstance(self, Store)
 
-    def is_sum(self):
+    def is_sum(self) -> bool:
         return isinstance(self, Sum)
 
-    def is_minus(self):
+    def is_minus(self) -> bool:
         return isinstance(self, Minus)
 
-    def is_prod(self):
+    def is_prod(self) -> bool:
         return isinstance(self, Prod)
 
-    def is_div(self):
+    def is_div(self) -> bool:
         return isinstance(self, Div)
 
-    def is_sincos(self):
+    def is_sincos(self) -> bool:
         return isinstance(self, SinCos)
 
-    def is_cos(self):
+    def is_cos(self) -> bool:
         return isinstance(self, Cos)
 
-    def is_sin(self):
+    def is_sin(self) -> bool:
         return isinstance(self, Sin)
 
-    def is_norm(self):
+    def is_norm(self) -> bool:
         return isinstance(self, Norm)
 
-    def is_rnorm(self):
+    def is_rnorm(self) -> bool:
         return isinstance(self, RNorm)
 
-    def is_pow(self):
+    def is_pow(self) -> bool:
         return isinstance(self, Pow)
 
-    def is_square(self):
+    def is_square(self) -> bool:
         return isinstance(self, Square)
 
-    def is_rcp(self):
+    def is_rcp(self) -> bool:
         return isinstance(self, Rcp)
 
-    def is_sqrt(self):
+    def is_sqrt(self) -> bool:
         return isinstance(self, Sqrt)
 
-    def is_rsqrt(self):
+    def is_rsqrt(self) -> bool:
         return isinstance(self, RSqrt)
 
-    def is_cbrt(self):
+    def is_cbrt(self) -> bool:
         return isinstance(self, Cbrt)
 
-    def is_rcbrt(self):
+    def is_rcbrt(self) -> bool:
         return isinstance(self, RCbrt)
 
-    def is_squeeze(self):
+    def is_squeeze(self) -> bool:
         return isinstance(self, Squeeze)
 
     def is_acc(self) -> bool:
         return isinstance(self, Accumulator) and self.n_args > 2
 
-    def is_anypow(self):
+    def is_anypow(self) -> bool:
         return isinstance(self, Exponent)
 
-    def is_zero_out(self):
+    def is_zero_out(self) -> bool:
         return isinstance(self, (Write,))
 
-    def is_two_out(self):
+    def is_two_out(self) -> bool:
         return isinstance(self, (SinCos,))
 
-    def is_fma(self):
+    def is_fma(self) -> bool:
         return isinstance(self, Fma)
 
-    def is_fmaprod(self):
+    def is_fmaprod(self) -> bool:
         return isinstance(self, FmaProd)
 
 
@@ -156,20 +154,20 @@ Func_T = Type[Func]
 
 
 class Accumulator(Func):
-    n_res = 1
+    n_outs = 1
 
 
 class Write(Func):
-    n_res = 0
+    n_outs = 0
 
 
 class Read(Func):
-    def __repr__(self):
+    def __repr__(self) -> str:
         return str(self.data)
 
 
 class Store(Func):
-    def __repr__(self):
+    def __repr__(self) -> str:
         return str(self.data)
 
 
@@ -189,7 +187,7 @@ class Div(Func): ...
 
 
 class SinCos(Func):
-    n_res = 2
+    n_outs = 2
 
 
 class Cos(Func): ...
@@ -205,7 +203,6 @@ class RNorm(Func): ...
 
 
 class Exponent(Func):
-
     def exponent(self):
         if isinstance(self, Pow):
             return self.args[1]
@@ -248,7 +245,6 @@ class Squeeze(Func): ...
 
 
 class FmaProd(Func):
-
     def is_acc(self):
         return True
 

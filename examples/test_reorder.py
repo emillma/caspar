@@ -1,15 +1,16 @@
 from random import randint
+
 import symforce
 
 symforce.set_epsilon_to_symbol()
-import symforce.symbolic as sf
-from caspar.cuda.allocation import Problem, prepare, Solver
-
-import sympy
-
 # Setup
 import numpy as np
+import sympy
 
+import symforce.symbolic as sf
+from caspar.cuda.allocation import Problem
+from caspar.cuda.allocation import Solver
+from caspar.cuda.allocation import prepare
 
 symforce.set_symbolic_api("symengine")
 symforce.set_log_level("warning")
@@ -20,8 +21,6 @@ symforce.set_log_level("warning")
 import symforce.symbolic as sf
 from symforce import codegen
 from symforce.codegen import codegen_util
-from symforce.notebook_util import display
-from symforce.notebook_util import display_code_file
 from symforce.values import Values
 
 
@@ -54,17 +53,7 @@ for f in az_el_codegen_data.generated_files:
     print("  |- {}".format(f))
 
 
-def foo():
-    print("start")
-    yield 1
-    print("middle")
-    yield 2
-    print("end")
-    return 3
-
-
 if __name__ == "__main__":
-
     for i in range(1):
         letters = [chr(randint(97, 122)) for _ in range(6)]
         letters = [chr(97 + i) for i in range(6)]
