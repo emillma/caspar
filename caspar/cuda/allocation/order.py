@@ -161,6 +161,8 @@ class Solver:
             self.start_accumulate(func)
 
         for prod in (arg.func for arg in func.args if arg.func.is_fmaprod()):
+            if prod in self.fma_waiting:
+                self.accumulate(prod, self.fma_waiting.pop(prod), prod.outs[0])
             self.check_if_ready(prod)
 
     def start_fmaprod(self, func: Func) -> None:
@@ -183,7 +185,7 @@ class Solver:
                     self.started_acc.remove(parent)
 
         elif func.is_fmaprod_many():
-            None
+            self.start_accumulate(func)
 
     def start_accumulate(self, func: Func) -> None:
         """Start accumulating a function."""
@@ -198,19 +200,31 @@ class Solver:
 
     def accumulate(self, func: Func, var: Var, prev: Var) -> None:
         print("Accumulate: ", func, var)
-        if func.is_fmaprod():
-            None
 
-        if not (func.is_fmaprod() and len(self.missing_acc[func]) == 1):
-            self.use_var(func, var)
+        if func.is_fmaprod() and len(self.missing_acc[func]) == 1:
+            parent = self.fma_parents[func]
+            if parent not in self.started_acc:
+                self.fma_waiting[func] = var
+                self.check_if_ready(self.fma_parents[func])
+            else:
+                self.missing_acc[parent].remove(func.outs[0])
+                self.missing_arg[parent].remove(func.outs[0])
+                self.missing_contrib[func.outs[0]].remove(parent)
+                self.use_var(func, var)
+                self.pop_stack(func.outs[0])
+                self.ops.append((func, var, prev, parent.outs[0]))
+                self.started_acc.remove(func)
+                if len(self.missing_acc[parent]) == 0:
+                    self.finish_func(parent)
+                    self.started_acc.remove(parent)
         else:
-            self.fma_waiting[func] = var
-            self.check_if_ready(self.fma_parents[func])
-        if not var.func.is_fmaprod():
-            self.ops.append((func, var, prev))  # this is already done for fma_prods
-        if len(self.missing_acc[func]) == 0:
-            self.finish_func(func)
-            self.started_acc.remove(func)
+            self.use_var(func, var)
+            if not var.func.is_fmaprod():
+                self.ops.append((func, var, prev))  # this is already done for fma_prods
+
+            if len(self.missing_acc[func]) == 0:
+                self.finish_func(func)
+                self.started_acc.remove(func)
 
     def score(self, func: Func) -> tuple[int, ...]:
         # if func.is_load() and func.lit_args[0].data == "c":
