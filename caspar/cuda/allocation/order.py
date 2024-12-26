@@ -201,7 +201,13 @@ class Solver:
     def accumulate(self, func: Func, var: Var, prev: Var) -> None:
         print("Accumulate: ", func, var)
 
-        if func.is_fmaprod() and len(self.missing_acc[func]) == 1:
+        if (
+            func.is_fmaprod()
+            and len(self.missing_acc[func]) == 1
+            and not (
+                (parent := self.fma_parents[func]).is_fma_none() and parent not in self.started_acc
+            )
+        ):
             parent = self.fma_parents[func]
             if parent not in self.started_acc:
                 self.fma_waiting[func] = var
