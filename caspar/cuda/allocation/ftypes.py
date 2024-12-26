@@ -143,11 +143,26 @@ class Func:
     def is_two_out(self) -> bool:
         return isinstance(self, (SinCos,))
 
+    def is_fma_none(self) -> bool:
+        return isinstance(self, FmaNone)
+
+    def is_fma_one(self) -> bool:
+        return isinstance(self, FmaOne)
+
+    def is_fma_many(self) -> bool:
+        return isinstance(self, FmaMany)
+
+    def is_fmaprod_two(self) -> bool:
+        return isinstance(self, FmaProdTwo)
+
+    def is_fmaprod_many(self) -> bool:
+        return isinstance(self, FmaProdMany)
+
     def is_fma(self) -> bool:
-        return isinstance(self, Fma)
+        return isinstance(self, (FmaNone, FmaOne, FmaMany))
 
     def is_fmaprod(self) -> bool:
-        return isinstance(self, FmaProd)
+        return isinstance(self, (FmaProdTwo, FmaProdMany))
 
 
 Func_T = Type[Func]
@@ -244,12 +259,25 @@ class RCbrt(Exponent): ...
 class Squeeze(Func): ...
 
 
-class FmaProd(Func):
+class FmaProdTwo(Func): ...
+
+
+class FmaProdMany(Func):
     def is_acc(self):
         return True
 
 
-class Fma(Func):
+class FmaNone(Func):
+    def is_acc(self):
+        return True
+
+
+class FmaOne(Func):
+    def is_acc(self):
+        return True
+
+
+class FmaMany(Func):
     def is_acc(self):
         return True
 

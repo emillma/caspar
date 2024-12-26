@@ -132,12 +132,7 @@ class Problem:
 
     def fix_div(self) -> None:
         for var, funcs in self.dependencies().items():
-            if not (
-                var.func
-                and len(funcs) == 1
-                and funcs[0].is_prod()
-                and var.func.is_rcp()
-            ):
+            if not (var.func and len(funcs) == 1 and funcs[0].is_prod() and var.func.is_rcp()):
                 continue
             others = [a for a in funcs[0].args if a != var]
             new_prod_var = ftypes.Prod(*others)[0] if len(others) > 1 else others[0]
@@ -198,8 +193,14 @@ class Problem:
             if not unique_prods:
                 continue
 
-            fma_prods = (ftypes.FmaProd(*p.args)[0] for p in unique_prods)
-            new_sum = ftypes.Fma(*other, *fma_prods)
+            fma_prods = []
+            for p in unique_prods:
+                cls = ftypes.FmaProdTwo if len(p.args) == 2 else ftypes.FmaProdMany
+                fma_prods.append(cls(*p.args)[0])
+
+            n_sum = min(len(other), 2)
+            cls = [ftypes.FmaNone, ftypes.FmaOne, ftypes.FmaMany][n_sum]
+            new_sum: Func = cls(*other, *fma_prods)
             new_sum.rebind(sum.outs[0])
 
     def fix_norms(self):
