@@ -1,31 +1,36 @@
 # CASPAR - Copyright 2024, Emil Martens, SFI Autoship, NTNU
 # This source code is under the Apache 2.0 license found in the LICENSE file.
-from dataclasses import dataclass, field
-from functools import cached_property
 import random
-from typing import Type, Union, get_args
-import symforce.symbolic as sf
+from dataclasses import dataclass
+from dataclasses import field
+from typing import Any
+from typing import Type
+
 from symengine.lib import symengine_wrapper
+
+import symforce.symbolic as sf
 
 
 @dataclass(eq=False)
 class Var:
     func: "Func"
     idx: int = field(default=0)
+    # contribs: set["Func"] = field(default_factory=set)
+    missing_contribs: set["Func"] = field(default_factory=set)
 
-    def set_func(self, func: "Func"):
+    def set_func(self, func: "Func") -> None:
         object.__setattr__(self, "func", func)
 
-    def is_const(self):
+    def is_const(self) -> bool:
         return self.func.is_store()
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash((self.func, self.idx))
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         return isinstance(other, Var) and hash(self) == hash(other)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return str(self.func) + (f"[{self.idx}]" if self.idx else "")
 
 
@@ -34,13 +39,26 @@ class Func:
     outs: list[Var]
     n_outs = 1
     data: float | int | str | None = None
+
+    missing_args: set[Var]
+    acc_count: int
+
     _hash: int | None = None
 
-    def __init__(self, *args: Var, data=None) -> None:
+    def __init__(self, *args: Var, data: Any = None, outs: list[Var] | None = None) -> None:
         self.args = args
         self.data = data
+        self.missing_args = set()
+        self.acc_count = 0
+
         assert isinstance(data, (float, int, str)) or data is None
-        self.outs = [Var(self, i) for i in range(self.n_outs)]
+        if outs is None:
+            self.outs = [Var(self, i) for i in range(self.n_outs)]
+        else:
+            for out in outs:
+                out.set_func(self)
+            self.outs = outs
+
         assert isinstance(self.args, tuple)
         # assert isinstance(self.outs, tuple)
         assert all([isinstance(arg, Var) for arg in self.args])
@@ -49,12 +67,12 @@ class Func:
     def n_args(self) -> int:
         return len(self.args)
 
-    def rebind(self, var: Var, idx: int = 0):
+    def rebind(self, var: Var, idx: int = 0) -> None:
         var.func = self
         var.idx = idx
         self.outs[idx] = var
 
-    def __getitem__(self, idx) -> Var:
+    def __getitem__(self, idx: int) -> Var:
         return self.outs[idx]
 
     def __repr__(self) -> str:
@@ -68,13 +86,13 @@ class Func:
                 self._hash = hash((self.__class__, self.args, self.data))
         return self._hash
 
-    def __eq__(self, other):
+    def __eq__(self, other: "Func") -> bool:
         return isinstance(other, Func) and hash(self) == hash(other)
 
     def is_write(self) -> bool:
         return isinstance(self, Write)
 
-    def is_load(self):
+    def is_load(self) -> bool:
         return isinstance(self, Read)
 
     def is_store(self) -> bool:

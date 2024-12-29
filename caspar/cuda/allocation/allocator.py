@@ -22,6 +22,7 @@ class Problem:
         def translate(expr: sf.Expr) -> Var:
             if expr.is_Number or isinstance(expr, (int, float)):
                 return ftypes.Store(data=float(expr))[0]
+
             if (out := expr_map.get(expr)) is not None:
                 return out
 
@@ -29,8 +30,9 @@ class Problem:
             if expr.is_Symbol:
                 out = expr_map.setdefault(expr, FType(data=expr.name)[0])
             else:
-                args = (translate(arg) for arg in expr.args)
-                out = expr_map.setdefault(expr, FType(*args)[0])
+                args = [translate(arg) for arg in expr.args]
+                func = FType(*args)
+                out = expr_map.setdefault(expr, func[0])
             return out
 
         mapped = [translate(expr) for expr in exprs]
@@ -38,9 +40,6 @@ class Problem:
         self.root_funcs = [ftypes.Write(rv, data=i) for i, rv in enumerate(root_vars)]
         ls = list(self.root_funcs)
         assert next(iter(self.root_funcs)) in self.root_funcs
-
-        for expr in exprs:
-            translate(expr)
 
         self.fix_pow()
         self.expand_prods()
@@ -76,20 +75,20 @@ class Problem:
                 visited.add(arg)
                 yield arg
 
-    def dependencies(self) -> dict[Var, list[Func]]:
-        deps: dict[Var, list[Func]] = {}
+    def contribs(self) -> dict[Var, list[Func]]:
+        contribs: dict[Var, list[Func]] = {}
         for func in self.funcs():
             for arg in func.args:
-                deps.setdefault(arg, []).append(func)
-        return deps
+                contribs.setdefault(arg, []).append(func)
+        return contribs
 
     def fix_pow(self) -> None:  # a**-(2/3) -> rcbrt(a)**2
         for pow in self.funcs(ftypes.Pow):
             new_pow = fixers.fix_pow(pow)
             new_pow.rebind(pow.outs[0])
 
-    def expand_prods(self):  # a*(b*c) -> a*b*c
-        def prod_gen(arg: Var):
+    def expand_prods(self) -> None:  # a*(b*c) -> a*b*c
+        def prod_gen(arg: Var) -> Generator[Var, None, None]:
             if not arg.func.is_prod():
                 yield arg
             else:
@@ -123,7 +122,7 @@ class Problem:
                 new_func = ftypes.Prod(*new_args)
             new_func.rebind(mul.outs[0])
 
-    def fix_prods(self):
+    def fix_prods(self) -> None:
         prods = [p for p in self.funcs(ftypes.Prod)]
         mul_map = fixers.find_shared_args([p.args for p in prods])
         for prod in prods:
@@ -131,31 +130,32 @@ class Problem:
             new_prod.rebind(prod.outs[0])
 
     def fix_div(self) -> None:
-        for var, funcs in self.dependencies().items():
-            if not (var.func and len(funcs) == 1 and funcs[0].is_prod() and var.func.is_rcp()):
+        for var, contribs in self.contribs().items():
+            if not (len(contribs) == 1 and contribs[0].is_prod() and var.func.is_rcp()):
                 continue
-            others = [a for a in funcs[0].args if a != var]
+            others = [a for a in contribs[0].args if a != var]
             new_prod_var = ftypes.Prod(*others)[0] if len(others) > 1 else others[0]
             new_div = ftypes.Div(new_prod_var, var.func.args[0])
-            new_div.rebind(funcs[0].outs[0])
+            new_div.rebind(contribs[0].outs[0])
 
-    def fix_sums(self):
+    def fix_sums(self) -> None:
         sums = [s for s in self.funcs(ftypes.Sum)]
         sum_map = fixers.find_shared_args([s.args for s in sums])
         for sum in sums:
             new_sum = fixers.fix_accum(ftypes.Sum, sum_map[sum.args])
             new_sum.rebind(sum.outs[0])
 
-    def fix_minus(self):
+    def fix_minus(self) -> None:
         for func in self.funcs(ftypes.Prod):
             if -1.0 in func.lit_args:
                 new_prod = ftypes.Prod(*(a for a in func.args if a != -1.0))
                 new_neg = ftypes.Neg(new_prod[0])
                 new_neg.rebind(func.outs[0])
+
         for func in self.funcs(ftypes.SUM):
             None
 
-    def fix_sincos(self):
+    def fix_sincos(self) -> None:
         sin = {}
         cos = {}
         shared = {}
@@ -177,12 +177,12 @@ class Problem:
             new_sincos.rebind(c[0], 1)
 
     def fix_fma(self) -> None:
-        deps = self.dependencies()
+        contribs = self.contribs()
         for sum in self.funcs(ftypes.Sum):
             unique_prods: list[ftypes.Prod] = []
             other = []
             for arg in sum.args:
-                if arg.func.is_prod() or arg.func.is_square() and len(deps[arg]) == 1:
+                if arg.func.is_prod() or arg.func.is_square() and len(contribs[arg]) == 1:
                     if arg.func.is_square():
                         new_prod = ftypes.Prod(arg.func.args[0], arg.func.args[0])
                         new_prod.rebind(arg)

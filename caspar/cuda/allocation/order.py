@@ -43,30 +43,22 @@ class Solver:
     ):
         self.aff1 = aff1
         self.aff2 = aff2
+        args: set[Var] = {arg for func in funcs for arg in func.args}
 
-        self.missing_arg = {f: set(f.args) for f in funcs}
-        self.missing_acc = {f: set(f.args) for f in funcs if f.is_acc()}
-        assert all(len(v) == f.n_args for f, v in self.missing_acc.items())
+        for arg in args:
+            arg.missing_contribs = set()
 
-        self.missing_contrib: dict[Var, set[Func]] = {}
-        for fma, var in ((f, v) for f in funcs for v in f.args):
-            self.missing_contrib.setdefault(var, set()).add(fma)
-
-        self.ready = {k for k, v in self.missing_arg.items() if not v}
-        self.not_ready = {k for k in self.missing_arg if k not in self.ready}
+        for func in funcs:
+            func.missing_args = set(func.args)
+            func.acc_count = 0
+            for arg in func.args:
+                arg.missing_contribs.add(func)
+        self.funcs = funcs
+        self.ready = {f for f in funcs if not f.missing_args}
+        self.not_ready = {k for k in funcs if k not in self.ready}
 
         # self.fma2fmaprods: dict[Func, set[ftypes.FmaProd]] = {}
-        self.fma_parents: dict[Func, Func] = {}
         self.fma_waiting: dict[ftypes.Func, Var] = {}
-        self.fma_target: dict[ftypes.Func, Var | None] = {}
-
-        # self.fma_pure: set[Func] = {
-        #     f for f in funcs if f.is_fma() and all(arg.func.is_fmaprod() for arg in f.args)
-        # }
-        for fma in (f for f in funcs if f.is_fma()):
-            for fmaprod in (a.func for a in fma.args if a.func.is_fmaprod()):
-                # self.fma2fmaprods.setdefault(fma, set()).add(fmaprod)
-                self.fma_parents[fmaprod] = fma
 
         self.reg_count = 0
         self.regmap: dict[Var, int] = {}
@@ -93,12 +85,12 @@ class Solver:
     def use_var(self, func: Func, var: Var) -> None:
         """Use a variable in a function."""
         print("Remove contrib: ", func, var)
-        assert var not in self.missing_arg[func]
-        self.missing_contrib[var].remove(func)
+        assert var not in func.missing_args
+        var.missing_contribs.remove(func)
         if func.is_acc():
-            self.missing_acc[func].remove(var)
+            func.acc_count += 1
 
-        if not self.missing_contrib[var]:
+        if not var.missing_contribs:
             self.pop_stack(var)
 
     def check_if_ready(self, func: Func) -> None:
@@ -109,23 +101,23 @@ class Solver:
             if func.is_fma_none() or func.is_fma_one():
                 ready = any(arg.func.outs[0] in self.live_vars for arg in func.args)
             elif func.is_fma_many():
-                ready = len(self.missing_arg[func]) <= func.n_args - 2
+                ready = len(func.missing_args) <= func.n_args - 2
 
         elif func.is_fmaprod():
-            parent = self.fma_parents[func]
+            parent = next(iter(func[0].missing_contribs))
             if func.is_fmaprod_two():
-                ready = not self.missing_arg[func]
+                ready = not func.missing_args
                 if parent.is_fma_one():
                     ready = ready and parent.args[0] in self.live_vars
                 elif parent.is_fma_many():
                     ready = ready and parent in self.started_acc
             else:
-                ready = len(self.missing_arg[func]) <= func.n_args - 2
+                ready = len(func.missing_args) <= func.n_args - 2
         elif func.is_acc():
-            ready = len(self.missing_arg[func]) <= func.n_args - 2
+            ready = len(func.missing_args) <= func.n_args - 2
 
         else:
-            ready = not self.missing_arg[func]
+            ready = not func.missing_args
 
         if ready:
             self.not_ready.remove(func)
@@ -144,8 +136,8 @@ class Solver:
         print("Finish: ", func)
         for out in func.outs:
             self.live_vars.add(out)
-            for contrib in self.missing_contrib[out].copy():
-                self.missing_arg[contrib].remove(out)
+            for contrib in out.missing_contribs.copy():
+                contrib.missing_args.remove(out)
                 if contrib.is_acc() and contrib in self.started_acc:
                     self.accumulate(contrib, out, contrib.outs[0])
                 self.check_if_ready(contrib)
@@ -168,7 +160,7 @@ class Solver:
     def start_fmaprod(self, func: Func) -> None:
         """Start accumulating a function."""
         print("Start fmaprod: ", func)
-        parent = self.fma_parents[func]
+        parent = next(iter(func[0].missing_contribs))
         if func.is_fmaprod_two():
             if parent.is_fma_none() and parent not in self.started_acc:
                 self.do_func(func)
@@ -177,10 +169,10 @@ class Solver:
                 self.use_var(func, func.args[0])
                 self.use_var(func, func.args[1])
                 self.ops.append((func, func.args[0], func.args[1], parent.outs[0]))
-                self.missing_acc[parent].remove(func.outs[0])
-                self.missing_arg[parent].remove(func.outs[0])
-                self.missing_contrib[func.outs[0]].remove(parent)
-                if not self.missing_acc[parent]:
+                parent.acc_count += 1
+                parent.missing_args.remove(func.outs[0])
+                func.outs[0].missing_contribs.remove(parent)
+                if parent.acc_count == len(parent.args):
                     self.finish_func(parent)
                     self.started_acc.remove(parent)
 
@@ -192,7 +184,7 @@ class Solver:
         print("Start accumulate: ", func)
         self.started_acc.add(func)
         live_args = [v for v in func.args if v in self.live_vars]
-        first = max(live_args, key=lambda v: self.missing_contrib[v] <= {func})
+        first = max(live_args, key=lambda v: v.missing_contribs <= {func})
         self.use_var(func, first)
         for i, v in enumerate(a for a in live_args if a is not first):
             self.accumulate(func, v, first if i == 0 else func.outs[0])
@@ -203,24 +195,24 @@ class Solver:
 
         if (
             func.is_fmaprod()
-            and len(self.missing_acc[func]) == 1
+            and func.acc_count == len(func.args) - 1
             and not (
-                (parent := self.fma_parents[func]).is_fma_none() and parent not in self.started_acc
+                (parent := next(iter(func[0].missing_contribs))).is_fma_none()
+                and parent not in self.started_acc
             )
         ):
-            parent = self.fma_parents[func]
             if parent not in self.started_acc:
                 self.fma_waiting[func] = var
-                self.check_if_ready(self.fma_parents[func])
+                self.check_if_ready(parent)
             else:
-                self.missing_acc[parent].remove(func.outs[0])
-                self.missing_arg[parent].remove(func.outs[0])
-                self.missing_contrib[func.outs[0]].remove(parent)
+                parent.acc_count += 1
+                parent.missing_args.remove(func.outs[0])
+                func[0].missing_contribs.remove(parent)
                 self.use_var(func, var)
                 self.pop_stack(func.outs[0])
                 self.ops.append((func, var, prev, parent.outs[0]))
                 self.started_acc.remove(func)
-                if len(self.missing_acc[parent]) == 0:
+                if parent.acc_count == len(parent.args):
                     self.finish_func(parent)
                     self.started_acc.remove(parent)
         else:
@@ -228,29 +220,27 @@ class Solver:
             if not var.func.is_fmaprod():
                 self.ops.append((func, var, prev))  # this is already done for fma_prods
 
-            if len(self.missing_acc[func]) == 0:
+            if func.acc_count == len(func.args):
                 self.finish_func(func)
                 self.started_acc.remove(func)
 
     def score(self, func: Func) -> tuple[int, ...]:
         # if func.is_load() and func.lit_args[0].data == "c":
         #     return -100, 0, 0, 0, 0, 0
-        reg_preassure = (
-            sum(self.missing_contrib[var] <= {func} for var in self.live_vars) - func.n_outs
-        )
+        reg_preassure = sum(var.missing_contribs <= {func} for var in self.live_vars) - func.n_outs
         removable = all(
             (f.is_acc() and f in self.started_acc)
             for out in func.outs
-            for f in self.missing_contrib[out]
+            for f in out.missing_contribs
         )
 
         a1 = a2 = finishable = 0
 
         if func.is_fma():
             finishable += sum(arg.func in self.fma_waiting for arg in func.args)
-        if not self.missing_arg[func]:
-            for other in set(f for out in func.outs for f in self.missing_contrib[out]):
-                if self.missing_arg[other] <= set(func.outs):
+        if not func.missing_args:
+            for other in set(f for out in func.outs for f in out.missing_contribs):
+                if other.missing_args <= set(func.outs):
                     finishable += 1
             a1 = sum(self.aff1.get(func, {}).get(r, 0) for r in self.live_vars)
             a2 = sum(self.aff2.get(func, {}).get(r, 0) for r in self.live_vars)
@@ -261,7 +251,7 @@ class Solver:
             finishable,
             a1,
             a2,
-            -int(func.is_acc() and bool(self.missing_arg[func])),
+            -int(func.is_acc() and bool(func.missing_args)),
         )
 
     def reorder(self) -> None:
@@ -269,7 +259,6 @@ class Solver:
             scores = {call: self.score(call) for call in self.ready}
             func = max(self.ready, key=self.score)
             self.ready.remove(func)
-
             if func.is_fma():
                 self.start_fma(func)
             elif func.is_fmaprod():

@@ -54,7 +54,6 @@ OP_MAP = {
 
 
 def fix_pow(func: Func) -> Func:
-
     def inner(base: Var, exponent: Fraction) -> Var:
         if (exp := EXP_MAP.get(exponent, None)) is None:
             return ftypes.Pow(base, ftypes.Store(data=float(exponent))[0])[0]
@@ -80,8 +79,7 @@ def fix_pow(func: Func) -> Func:
     return inner(func.args[0], exponent).func
 
 
-def find_shared_args(expr_args: list[list[Var]]) -> dict[tuple[Var], set[list[Var]]]:
-
+def find_shared_args(expr_args: list[list[Var]]) -> dict[tuple[Var], set[Var]]:
     if not expr_args:
         return {}
 
