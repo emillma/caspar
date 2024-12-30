@@ -1,5 +1,6 @@
 # CASPAR - Copyright 2024, Emil Martens, SFI Autoship, NTNU
 # This source code is under the Apache 2.0 license found in the LICENSE file.
+from collections import Counter
 import random
 from dataclasses import dataclass
 from dataclasses import field
@@ -16,7 +17,7 @@ class Var:
     func: "Func"
     idx: int = field(default=0)
     # contribs: set["Func"] = field(default_factory=set)
-    missing_contribs: set["Func"] = field(default_factory=set)
+    missing_contribs: Counter["Func"] = field(default_factory=Counter)
 
     def set_func(self, func: "Func") -> None:
         object.__setattr__(self, "func", func)
@@ -182,6 +183,9 @@ class Func:
     def is_fmaprod(self) -> bool:
         return isinstance(self, (FmaProdTwo, FmaProdMany))
 
+    def is_neg(self) -> bool:
+        return isinstance(self, Neg)
+
 
 Func_T = Type[Func]
 
@@ -200,6 +204,8 @@ class Read(Func):
 
 
 class Store(Func):
+    data: float | int
+
     def __repr__(self) -> str:
         return str(self.data)
 

@@ -1,6 +1,7 @@
 # CASPAR - Copyright 2024, Emil Martens, SFI Autoship, NTNU
 # This source code is under the Apache 2.0 license found in the LICENSE file.
 
+from collections import Counter
 from itertools import combinations
 from itertools import product
 from typing import Iterable
@@ -46,13 +47,13 @@ class Solver:
         args: set[Var] = {arg for func in funcs for arg in func.args}
 
         for arg in args:
-            arg.missing_contribs = set()
+            arg.missing_contribs = Counter()
 
         for func in funcs:
             func.missing_args = set(func.args)
             func.acc_count = 0
             for arg in func.args:
-                arg.missing_contribs.add(func)
+                arg.missing_contribs[func] += 1
         self.funcs = funcs
         self.ready = {f for f in funcs if not f.missing_args}
         self.not_ready = {k for k in funcs if k not in self.ready}
@@ -86,11 +87,11 @@ class Solver:
         """Use a variable in a function."""
         print("Remove contrib: ", func, var)
         assert var not in func.missing_args
-        var.missing_contribs.remove(func)
+        var.missing_contribs[func] -= 1
         if func.is_acc():
             func.acc_count += 1
 
-        if not var.missing_contribs:
+        if var.missing_contribs.total() == 0:
             self.pop_stack(var)
 
     def check_if_ready(self, func: Func) -> None:
@@ -171,7 +172,7 @@ class Solver:
                 self.ops.append((func, func.args[0], func.args[1], parent.outs[0]))
                 parent.acc_count += 1
                 parent.missing_args.remove(func.outs[0])
-                func.outs[0].missing_contribs.remove(parent)
+                func.outs[0].missing_contribs[parent] -= 1
                 if parent.acc_count == len(parent.args):
                     self.finish_func(parent)
                     self.started_acc.remove(parent)
@@ -184,7 +185,7 @@ class Solver:
         print("Start accumulate: ", func)
         self.started_acc.add(func)
         live_args = [v for v in func.args if v in self.live_vars]
-        first = max(live_args, key=lambda v: v.missing_contribs <= {func})
+        first = max(live_args, key=lambda v: v.missing_contribs.keys() <= {func})
         self.use_var(func, first)
         for i, v in enumerate(a for a in live_args if a is not first):
             self.accumulate(func, v, first if i == 0 else func.outs[0])
@@ -207,7 +208,7 @@ class Solver:
             else:
                 parent.acc_count += 1
                 parent.missing_args.remove(func.outs[0])
-                func[0].missing_contribs.remove(parent)
+                func[0].missing_contribs[parent] -= 1
                 self.use_var(func, var)
                 self.pop_stack(func.outs[0])
                 self.ops.append((func, var, prev, parent.outs[0]))
@@ -225,9 +226,9 @@ class Solver:
                 self.started_acc.remove(func)
 
     def score(self, func: Func) -> tuple[int, ...]:
-        # if func.is_load() and func.lit_args[0].data == "c":
-        #     return -100, 0, 0, 0, 0, 0
-        reg_preassure = sum(var.missing_contribs <= {func} for var in self.live_vars) - func.n_outs
+        freed = sum(var.missing_contribs.keys() <= {func} for var in self.live_vars)
+        reg_preassure = freed - func.n_outs
+
         removable = all(
             (f.is_acc() and f in self.started_acc)
             for out in func.outs

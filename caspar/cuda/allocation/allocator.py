@@ -1,18 +1,19 @@
 # CASPAR - Copyright 2024, Emil Martens, SFI Autoship, NTNU
 # This source code is under the Apache 2.0 license found in the LICENSE file.
-from dataclasses import dataclass, field
-from functools import lru_cache
-from itertools import combinations_with_replacement, product
-from typing import Generator, Type
-import symforce.symbolic as sf
-from collections import Counter
-from symengine.lib import symengine_wrapper
-import numpy as np
-from fractions import Fraction
 
-from . import ftypes
-from .ftypes import Func, Var, Var, TMAP, Func_T
+from typing import Generator
+from typing import Type
+
+from symengine.lib import symengine_wrapper
+
+import symforce.symbolic as sf
+
 from . import fixers
+from . import ftypes
+from .ftypes import TMAP
+from .ftypes import Func
+from .ftypes import Func_T
+from .ftypes import Var
 
 
 class Problem:
@@ -45,12 +46,12 @@ class Problem:
         self.expand_prods()
         self.collect_pows()
         self.fix_sums()
-        # self.fix_minus()
+        self.fix_minus()
         self.fix_prods()
         self.fix_div()
-        self.fix_fma()
         self.fix_sincos()
-        # self.squeeze()
+        self.fix_norms()
+        self.fix_fma()
         None
 
     def funcs(self, ftype: Type[Func] | None = None) -> Generator[Func, None, None]:
@@ -147,13 +148,32 @@ class Problem:
 
     def fix_minus(self) -> None:
         for func in self.funcs(ftypes.Prod):
-            if -1.0 in func.lit_args:
-                new_prod = ftypes.Prod(*(a for a in func.args if a != -1.0))
-                new_neg = ftypes.Neg(new_prod[0])
+            funcs = (a.func for a in func.args)
+            neg = next((f for f in funcs if f.is_store() and f.data == -1), None)
+            if neg is not None:
+                args = [a for a in func.args if a.func is not neg]
+                if len(args) == 1:
+                    new_func = args[0].func
+                else:
+                    new_func = ftypes.Prod(*(a for a in func.args if a.func is not neg))
+                new_neg = ftypes.Neg(new_func[0])
                 new_neg.rebind(func.outs[0])
 
-        for func in self.funcs(ftypes.SUM):
-            None
+        for func in self.funcs(ftypes.Sum):
+            negs = [a for a in func.args if a.func.is_neg()]
+            if not negs:
+                continue
+            other = [a for a in func.args if not a.func.is_neg()]
+            if len(negs) == 1:
+                neg_part = negs[0].func.args[0]
+            else:
+                neg_part = ftypes.Sum(*(a.func.args[0] for a in negs))[0]
+            if len(other) == 1:
+                other_part = other[0]
+            else:
+                other_part = ftypes.Sum(*other)[0]
+            new_minus = ftypes.Minus(other_part, neg_part)
+            new_minus.rebind(func.outs[0])
 
     def fix_sincos(self) -> None:
         sin = {}
@@ -175,6 +195,22 @@ class Problem:
             new_sincos = ftypes.SinCos(base)
             new_sincos.rebind(s[0])
             new_sincos.rebind(c[0], 1)
+
+    def fix_norms(self) -> None:
+        for root_typ in [ftypes.Sqrt, ftypes.RSqrt]:
+            for root in self.funcs(root_typ):
+                if not (inner := root.args[0].func).is_sum():
+                    continue
+                if all(
+                    a.func.is_square() or (a.func.is_store() and a.func.data >= 0)
+                    for a in inner.args
+                ):
+                    store_vals = [a.func.data for a in inner.args if a.func.is_store()]
+                    new_lits = [ftypes.Store(data=v**0.5)[0] for v in store_vals]
+                    other = [a.func.args[0] for a in inner.args if not a.func.is_store()]
+                    norm_tyb = ftypes.Norm if root_typ is ftypes.Sqrt else ftypes.RNorm
+                    new_func = norm_tyb(*new_lits, *other)
+                    new_func.rebind(root.outs[0])
 
     def fix_fma(self) -> None:
         contribs = self.contribs()
@@ -202,93 +238,3 @@ class Problem:
             cls = [ftypes.FmaNone, ftypes.FmaOne, ftypes.FmaMany][n_sum]
             new_sum: Func = cls(*other, *fma_prods)
             new_sum.rebind(sum.outs[0])
-
-    def fix_norms(self):
-        pass
-
-    # def _fix_expr(self, expr: sf.Expr) -> Func:
-    #     if expr in self._fixed_exprs:
-    #         return self._fixed_exprs[expr]
-
-    #     methods = {
-    #         lambda x: x.is_Symbol or x.is_Number: self.fix_lit,
-    #         lambda x: x.is_Add: self.fix_sum,
-    #         lambda x: x.is_Mul: self.fix_mul,
-    #         lambda x: x.is_Pow: self.fix_pow,
-    #         lambda x: isinstance(x, symengine_wrapper.cos): self.fix_cos,
-    #         lambda x: isinstance(x, symengine_wrapper.sin): self.fix_sin,
-    #     }
-    #     for method, fix in methods.items():
-    #         if method(expr):
-    #             return fix(expr)
-    #     raise NotImplementedError
-
-    # def fix_expr(self, expr: sf.Expr) -> Var:
-    #     if expr in self._fixed_exprs:
-    #         return self._fixed_exprs[expr]
-    #     reg = self._fix_expr(expr)
-    #     assert isinstance(reg, Var)
-    #     return self._fixed_exprs.setdefault(expr, reg)
-
-    # def fix_lit(self, expr: sf.Symbol | sf.Number) -> Var:
-    #     if isinstance(expr, sf.Symbol):
-    #         return Func(FTYPES.LOAD, lit_args=[expr.name])[0]
-    #     elif isinstance(expr, sf.Number):
-    #         return Func(FTYPES.STORE, lit_args=[expr.evalf()])[0]
-
-    # def fix_accum(self, ftype: FTYPES, args: tuple[sf.Expr | tuple, ...]) -> Var:
-    #     out = []
-    #     for arg in args:
-    #         if isinstance(arg, sf.Expr):
-    #             out.append(self.fix_expr(arg))
-    #         else:
-    #             out.append(self.fix_accum(ftype, arg))
-    #     return Func(ftype, out)[0]
-
-    # def fix_sum(self, expr: sf.Add) -> Var:
-    #     return self.fix_accum(FTYPES.SUM, self._sum_map[expr.args])
-
-    # def fix_mul(self, expr: sf.Mul | sf.Pow) -> Var:
-    #     if expr.is_Pow:
-    #         return self.fix_pow(expr)
-    #     return self.fix_accum(FTYPES.PROD, self._prod_map[expr.args])
-
-    # def fix_pow(self, expr: sf.Pow) -> Var:
-    #     base, exp = expr.args
-    #     if is_fastpow(expr):
-    #         reg = self.fix_expr(base)
-    #         return {
-    #             2: Func(FTYPES.PROD, [reg, reg])[0],
-    #             3: Func(FTYPES.PROD, [reg, reg, reg])[0],
-    #             4: Func(FTYPES.PROD, [Var(Func(FTYPES.PROD, [reg, reg]))] * 2)[0],
-    #         }[exp]
-    #     if not exp.is_Number:
-    #         return Func(FTYPES.POW, [self.fix_expr(base), self.fix_expr(exp)])[0]
-    #     expf = float(exp)
-
-    #     if is_squared_sum(base) and expf in (0.5, -0.5):
-    #         powregs = [self.fix_expr(x.args[0]) for x in base.args if is_pow2(x)]
-    #         litregs = [self.fix_expr(x) for x in base.args if x.is_Number]
-    #         assert len(powregs) + len(litregs) == len(base.args)
-    #         if expf == 0.5:
-    #             return Func(FTYPES.NORM, [*powregs, *litregs])[0]
-    #         else:
-    #             return Func(FTYPES.RNORM, [*powregs, *litregs])[0]
-
-    #     if expf == -1:
-    #         return Func(FTYPES.RCP, [self.fix_expr(base)])[0]
-    #     if expf == 0.5:
-    #         return Func(FTYPES.SQRT, [self.fix_expr(base)])[0]
-    #     if expf == -0.5:
-    #         return Func(FTYPES.RSQRT, [self.fix_expr(base)])[0]
-    #     raise NotImplementedError
-
-    # def fix_cos(self, expr: sf.Expr) -> Var:
-    #     if sf.sin(expr.args[0]) in self.unique_exprs:
-    #         return Func(FTYPES.SINCOS, [self.fix_expr(expr.args[0])])[1]
-    #     return Func(FTYPES.COS, [self.fix_expr(expr.args[0])])[0]
-
-    # def fix_sin(self, expr: sf.Expr) -> Var:
-    #     if sf.cos(expr.args[0]) in self.unique_exprs:
-    #         return Func(FTYPES.SINCOS, [self.fix_expr(expr.args[0])])[0]
-    #     return Func(FTYPES.SIN, [self.fix_expr(expr.args[0])])[0]

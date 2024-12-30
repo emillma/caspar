@@ -79,11 +79,11 @@ def fix_pow(func: Func) -> Func:
     return inner(func.args[0], exponent).func
 
 
-def find_shared_args(expr_args: list[list[Var]]) -> dict[tuple[Var], set[Var]]:
+def find_shared_args(expr_args: list[tuple[Var, ...]]) -> dict[tuple[Var, ...], set[Var]]:
     if not expr_args:
         return {}
 
-    maps: dict[Var, set[sf.Expr]] = {}
+    maps: dict[tuple[Var, ...], set[sf.Expr]] = {}
     intersects: list[set[sf.Expr]] = []
     for i, args in enumerate(expr_args):
         seta = set(args)
