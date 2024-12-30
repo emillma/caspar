@@ -52,6 +52,7 @@ class Problem:
         self.fix_sincos()
         self.fix_norms()
         self.fix_fma()
+        self.split_store()
         None
 
     def funcs(self, ftype: Type[Func] | None = None) -> Generator[Func, None, None]:
@@ -102,30 +103,42 @@ class Problem:
             new_prod.rebind(prod.outs[0])
 
     def collect_pows(self) -> None:
-        for mul in self.funcs(ftypes.Prod):
-            pows: list[ftypes.Exponent]
-            pows = [v.func for v in mul.args if v.func.is_anypow()]
-
-            exps: dict[tuple[Func_T, float], list[Var]] = {}
-            for p in pows:
-                exps.setdefault((type(p), p.exponent()), []).append(p.args[0])
-            new_pows = []
-            for (FType, exp), args in exps.items():
-                base = ftypes.Prod(*args)[0] if len(args) > 1 else args[0]
-                if FType is ftypes.Pow:
-                    new_pows.append(FType(base, ftypes.Store(data=exp)[0])[0])
+        ptypes = [ftypes.Square, ftypes.Rcp, ftypes.Sqrt, ftypes.RSqrt, ftypes.Cbrt, ftypes.RCbrt]
+        to_check = list(self.funcs(ftypes.Prod))
+        for prod in to_check:
+            args = []
+            for ptype in ptypes:
+                instances = [p for p in prod.args if isinstance(p.func, ptype)]
+                if len(instances) == 0:
+                    continue
+                elif len(instances) == 1:
+                    args.append(instances[0])
                 else:
-                    new_pows.append(FType(base)[0])
-            other = (a for a in mul.args if not a.func.is_anypow())
-            if len(new_args := (*new_pows, *other)) == 1:
-                new_func = new_args[0].func
+                    base = ftypes.Prod(*[p.func.args[0] for p in instances])[0]
+                    to_check.append(base.func)
+                    args.append(ptype(base)[0])
+
+            common: dict[Var, list[Var]] = {}
+            for arg in (a for a in prod.args if a.func.is_pow()):
+                common.setdefault(arg.func.args[1], []).append(arg.func.args[0])
+            for exp, bases in common.items():
+                if len(bases) == 1:
+                    args.append(ftypes.Pow(base, exp)[0])
+                else:
+                    base = ftypes.Prod(*bases)[0]
+                    to_check.append(base.func)
+                    args.append(ftypes.Pow(base, exp)[0])
+
+            args += [a for a in prod.args if not isinstance(a.func, tuple(ptypes + [ftypes.Pow]))]
+            if len(args) == 1:
+                new_pow = args[0].func
             else:
-                new_func = ftypes.Prod(*new_args)
-            new_func.rebind(mul.outs[0])
+                new_pow = ftypes.Prod(*args)
+            new_pow.rebind(prod.outs[0])
 
     def fix_prods(self) -> None:
         prods = [p for p in self.funcs(ftypes.Prod)]
-        mul_map = fixers.find_shared_args([p.args for p in prods])
+        mul_map = fixers.find_shared_args([p.args for p in prods], 2)
         for prod in prods:
             new_prod = fixers.fix_accum(ftypes.Prod, mul_map[prod.args])
             new_prod.rebind(prod.outs[0])
@@ -141,7 +154,7 @@ class Problem:
 
     def fix_sums(self) -> None:
         sums = [s for s in self.funcs(ftypes.Sum)]
-        sum_map = fixers.find_shared_args([s.args for s in sums])
+        sum_map = fixers.find_shared_args([s.args for s in sums], 2)
         for sum in sums:
             new_sum = fixers.fix_accum(ftypes.Sum, sum_map[sum.args])
             new_sum.rebind(sum.outs[0])
@@ -238,3 +251,18 @@ class Problem:
             cls = [ftypes.FmaNone, ftypes.FmaOne, ftypes.FmaMany][n_sum]
             new_sum: Func = cls(*other, *fma_prods)
             new_sum.rebind(sum.outs[0])
+
+    def split_store(self) -> None:
+        for func in self.funcs():
+            if not any(a.func.is_store() for a in func.args):
+                continue
+            args = []
+            for arg in func.args:
+                if arg.func.is_store():
+                    new_store = ftypes.Store(data=arg.func.data)
+                    new_store._hash = id(new_store)
+                    args.append(new_store[0])
+                else:
+                    args.append(arg)
+            new_func = func.__class__(*args)
+            new_func.rebind(func.outs[0])

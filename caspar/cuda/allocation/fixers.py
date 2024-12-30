@@ -79,7 +79,9 @@ def fix_pow(func: Func) -> Func:
     return inner(func.args[0], exponent).func
 
 
-def find_shared_args(expr_args: list[tuple[Var, ...]]) -> dict[tuple[Var, ...], set[Var]]:
+def find_shared_args(
+    expr_args: list[tuple[Var, ...]], min_shared: int
+) -> dict[tuple[Var, ...], set[Var]]:
     if not expr_args:
         return {}
 
@@ -94,7 +96,7 @@ def find_shared_args(expr_args: list[tuple[Var, ...]]) -> dict[tuple[Var, ...], 
     while intersects:
         _, i = max([(len(x), i) for i, x in enumerate(intersects)])
         inter = intersects.pop(i)
-        if len(inter) == 1:
+        if len(inter) < min_shared:
             break
         for v in maps.values():
             if inter <= v:

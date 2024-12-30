@@ -59,7 +59,7 @@ if __name__ == "__main__":
         letters = [chr(97 + i) for i in range(6)]
         a, b, c, d, e, f = sf.symbols(" ".join(letters))
 
-        exprs = [a / (b * a + a**2)]
+        exprs = [a**2 + 2 * a * b + b**2]
         # exprs = [sf.sin((a + 1) * 2)]
         # exprs = [sf.sin(a + b) + (c * 3)]
 

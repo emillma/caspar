@@ -81,10 +81,7 @@ class Func:
 
     def __hash__(self) -> int:
         if self._hash is None:
-            if isinstance(self, Store):
-                self._hash = random.randint(0, 1 << 64)
-            else:
-                self._hash = hash((self.__class__, self.args, self.data))
+            self._hash = hash((self.__class__, self.args, self.data))
         return self._hash
 
     def __eq__(self, other: "Func") -> bool:
@@ -241,22 +238,7 @@ class Norm(Func): ...
 class RNorm(Func): ...
 
 
-class Exponent(Func):
-    def exponent(self):
-        if isinstance(self, Pow):
-            return self.args[1]
-        if isinstance(self, Square):
-            return 2.0
-        if isinstance(self, Rcp):
-            return -1.0
-        if isinstance(self, Sqrt):
-            return 0.5
-        if isinstance(self, RSqrt):
-            return -0.5
-        if isinstance(self, Cbrt):
-            return 1 / 3
-        if isinstance(self, RCbrt):
-            return -1 / 3
+class Exponent(Func): ...
 
 
 class Pow(Exponent): ...

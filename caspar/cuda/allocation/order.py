@@ -44,9 +44,9 @@ class Solver:
     ):
         self.aff1 = aff1
         self.aff2 = aff2
-        args: set[Var] = {arg for func in funcs for arg in func.args}
+        self.args: set[Var] = {arg for func in funcs for arg in func.args}
 
-        for arg in args:
+        for arg in self.args:
             arg.missing_contribs = Counter()
 
         for func in funcs:
@@ -68,8 +68,9 @@ class Solver:
         self.started_acc: set[Func] = set()
         self.ops: list = []
         self.max_stack = 0
+        self.current_stack = 0
 
-    def add_stack(self, add: list[Var]) -> None:
+    def allocate(self, add: list[Var]) -> None:
         """Add a variable to stack."""
         for var in add:
             if var in self.regmap:
@@ -128,7 +129,7 @@ class Solver:
         """Do a function."""
         for v in func.args:
             self.use_var(func, v)
-        self.add_stack(func.outs)
+        self.allocate(func.outs)
         self.ops.append((func, *func.args))
         self.finish_func(func)
 
@@ -177,7 +178,7 @@ class Solver:
                     self.finish_func(parent)
                     self.started_acc.remove(parent)
 
-        elif func.is_fmaprod_many():
+        else:
             self.start_accumulate(func)
 
     def start_accumulate(self, func: Func) -> None:
@@ -189,7 +190,7 @@ class Solver:
         self.use_var(func, first)
         for i, v in enumerate(a for a in live_args if a is not first):
             self.accumulate(func, v, first if i == 0 else func.outs[0])
-        self.add_stack(func.outs)
+        self.allocate(func.outs)
 
     def accumulate(self, func: Func, var: Var, prev: Var) -> None:
         print("Accumulate: ", func, var)
@@ -197,9 +198,9 @@ class Solver:
         if (
             func.is_fmaprod()
             and func.acc_count == len(func.args) - 1
-            and not (
-                (parent := next(iter(func[0].missing_contribs))).is_fma_none()
-                and parent not in self.started_acc
+            and (
+                not (parent := next(iter(func[0].missing_contribs))).is_fma_none()
+                and parent in self.started_acc
             )
         ):
             if parent not in self.started_acc:
@@ -272,16 +273,18 @@ class Solver:
     def format_reordering(self) -> None:
         new_ordrer = []
         accs: dict[Func, list] = {}
-
+        count = 0
         print("")
         for op in self.ops:
             func, *args = op
             if func.is_fmaprod() and len(args) == 3:
-                outs = [self.regmap[args.pop()]]
+                outs = [args[-1]]
             else:
-                outs = [self.regmap[a] for a in func.outs]
+                outs = [a for a in func.outs]
+
             print(
-                "".join(f"{str(a):3}" for a in outs),
+                "".join(f"{self.regmap[a]:5}" for a in outs),
                 f"{str(func):<40}",
-                "".join(f"{str(self.regmap[a]):3}" for a in args),
+                "".join(f"{str(self.regmap[a]):5}" for a in args),
             )
+        print(self.max_stack)
