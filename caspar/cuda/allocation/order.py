@@ -44,6 +44,10 @@ class Solver:
     ):
         self.aff1 = aff1
         self.aff2 = aff2
+        foo = {}
+        for arg in (a for f in funcs for a in f.args):
+            foo.setdefault(arg, set()).add(id(arg))
+        assert all(len(v) == 1 for k, v in foo.items() if k.func.n_args != 0)
         self.args: set[Var] = {arg for func in funcs for arg in func.args}
 
         for arg in self.args:
@@ -53,7 +57,7 @@ class Solver:
             func.missing_args = set(func.args)
             func.acc_count = 0
             for arg in func.args:
-                arg.missing_contribs[func] += 1
+                arg.missing_contribs.update([func])
         self.funcs = funcs
         self.ready = {f for f in funcs if not f.missing_args}
         self.not_ready = {k for k in funcs if k not in self.ready}
@@ -90,7 +94,7 @@ class Solver:
 
     def use_var(self, func: Func, var: Var) -> None:
         """Use a variable in a function."""
-        print("Remove contrib: ", func, var)
+        # print("Remove contrib: ", func, var)
         assert var not in func.missing_args
         var.missing_contribs[func] -= 1
         if func.is_acc():
@@ -139,7 +143,7 @@ class Solver:
 
     def finish_func(self, func: Func) -> None:
         """Finish a function."""
-        print("Finish: ", func)
+        # print("Finish: ", func)
         for out in func.outs:
             self.live_vars.add(out)
             for contrib in out.missing_contribs.copy():
@@ -150,7 +154,7 @@ class Solver:
 
     def start_fma(self, func: Func) -> None:
         """Start an FMA function."""
-        print("Start fma: ", func)
+        # print("Start fma: ", func)
         if func.is_fma_none():
             self.start_accumulate(func)
         if func.is_fma_one():
@@ -161,11 +165,12 @@ class Solver:
         for prod in (arg.func for arg in func.args if arg.func.is_fmaprod()):
             if prod in self.fma_waiting:
                 self.accumulate(prod, self.fma_waiting.pop(prod), prod.outs[0])
-            self.check_if_ready(prod)
+            else:
+                self.check_if_ready(prod)
 
     def start_fmaprod(self, func: Func) -> None:
         """Start accumulating a function."""
-        print("Start fmaprod: ", func)
+        # print("Start fmaprod: ", func)
         fma = self.fma_parents[func]
         if func.is_fmaprod_two():
             if fma.is_fma_none() and fma not in self.started_acc:
@@ -177,6 +182,7 @@ class Solver:
                 self.ops.append((func, func.args[0], func.args[1], fma.outs[0]))
                 fma.missing_args.remove(func.outs[0])
                 func.outs[0].missing_contribs[fma] -= 1
+                fma.acc_count += 1
                 if fma.acc_count == len(fma.args):
                     self.finish_func(fma)
                     self.started_acc.remove(fma)
@@ -186,7 +192,7 @@ class Solver:
 
     def start_accumulate(self, func: Func) -> None:
         """Start accumulating a function."""
-        print("Start accumulate: ", func)
+        # print("Start accumulate: ", func)
         self.started_acc.add(func)
         live_args = [v for v in func.args if v in self.live_vars]
         first = max(live_args, key=lambda v: v.missing_contribs.keys() <= {func})
@@ -196,7 +202,7 @@ class Solver:
         self.allocate(func.outs)
 
     def accumulate(self, func: Func, var: Var, prev: Var) -> None:
-        print("Accumulate: ", func, var)
+        # print("Accumulate: ", func, var)
 
         if (
             func.is_fmaprod()
@@ -241,8 +247,10 @@ class Solver:
             for other in set(f for out in func.outs for f in out.missing_contribs):
                 if other.missing_args <= set(func.outs):
                     firable += 1
-            a1 = sum(self.aff1.get(func, {}).get(r, 0) for r in self.live_vars)
-            a2 = sum(self.aff2.get(func, {}).get(r, 0) for r in self.live_vars)
+            if aff1 := self.aff1.get(func, {}):
+                a1 = sum(aff1.get(r, 0) for r in self.live_vars)
+            if aff2 := self.aff2.get(func, {}):
+                a2 = sum(aff2.get(r, 0) for r in self.live_vars)
             for contrib in (contrib for out in func.outs for contrib in out.missing_contribs):
                 if contrib.is_acc() and contrib in self.started_acc:
                     a1 += 1
@@ -250,7 +258,7 @@ class Solver:
         return (
             reg_preassure,
             removable,
-            func.n_args,
+            func.n_args - len(func.missing_args),
             firable,
             a1,
             a2,
@@ -260,6 +268,7 @@ class Solver:
         while self.not_ready or self.ready:
             scores = {call: self.score(call) for call in self.ready}
             func = max(self.ready, key=self.score)
+            # print(func)
             self.ready.remove(func)
             if func.is_fma():
                 self.start_fma(func)
@@ -275,7 +284,7 @@ class Solver:
         regmap = self.regmap
         count = 0
         print("")
-        fma_prod_couts = Counter()
+        fma_prod_couts: Counter[Func] = Counter()
         for op in self.ops:
             func, *args = op
             outs = func.outs
@@ -283,11 +292,10 @@ class Solver:
                 fma_prod_couts[func] += 1
                 if fma_prod_couts[func] == len(func.args) - 1:
                     outs = self.fma_parents[func].outs
-            arg_str = ", ".join(f"r{regmap[a]}" for a in args)
-
+            arg_str = [f"r{regmap[a]}" for a in args]
             for out in outs:
                 ssa_regmap[out] = count
                 count += 1
-            out_str = ", ".join(f"r{regmap[a]}" for a in outs)
-            print(out_str, f"{str(func):<40}", arg_str)
+            out_str = [f"r{regmap[a]}" for a in outs]
+            print(f"{func.print(out_str, arg_str):<50}")
         print(self.max_stack)

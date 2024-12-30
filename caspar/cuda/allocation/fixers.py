@@ -115,4 +115,4 @@ def fix_accum(FType: Type[Func], nested_args: tuple[tuple | Var, ...]) -> Func:
             args.append(thing)
         elif isinstance(thing, tuple):
             args.append(fix_accum(FType, thing)[0])
-    return FType(*args)
+    return FType(*args) if len(args) > 1 else args[0].func

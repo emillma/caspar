@@ -1,6 +1,7 @@
 # CASPAR - Copyright 2024, Emil Martens, SFI Autoship, NTNU
 # This source code is under the Apache 2.0 license found in the LICENSE file.
 
+from collections import Counter
 from typing import Generator
 from typing import Type
 
@@ -21,20 +22,19 @@ class Problem:
         expr_map: dict[sf.Expr, Var] = {}
 
         def translate(expr: sf.Expr) -> Var:
-            if expr.is_Number or isinstance(expr, (int, float)):
-                return ftypes.Store(data=float(expr))[0]
-
             if (out := expr_map.get(expr)) is not None:
                 return out
 
+            if expr.is_Number or isinstance(expr, (int, float)):
+                return expr_map.setdefault(expr, ftypes.Store(data=float(expr))[0])
+
             FType = TMAP[type(expr)]
             if expr.is_Symbol:
-                out = expr_map.setdefault(expr, FType(data=expr.name)[0])
+                return expr_map.setdefault(expr, FType(data=expr.name)[0])
             else:
                 args = [translate(arg) for arg in expr.args]
                 func = FType(*args)
-                out = expr_map.setdefault(expr, func[0])
-            return out
+                return expr_map.setdefault(expr, func[0])
 
         mapped = [translate(expr) for expr in exprs]
         root_vars = [var for var in mapped if isinstance(var, Var)]
@@ -52,6 +52,7 @@ class Problem:
         self.fix_sincos()
         self.fix_norms()
         self.fix_fma()
+        self.make_unique()
         self.split_store()
         None
 
@@ -129,12 +130,12 @@ class Problem:
                     to_check.append(base.func)
                     args.append(ftypes.Pow(base, exp)[0])
 
-            args += [a for a in prod.args if not isinstance(a.func, tuple(ptypes + [ftypes.Pow]))]
+            args += [a for a in prod.args if not isinstance(a.func, ftypes.Exponent)]
             if len(args) == 1:
-                new_pow = args[0].func
+                new_prod = args[0].func
             else:
-                new_pow = ftypes.Prod(*args)
-            new_pow.rebind(prod.outs[0])
+                new_prod = ftypes.Prod(*args)
+            new_prod.rebind(prod.outs[0])
 
     def fix_prods(self) -> None:
         prods = [p for p in self.funcs(ftypes.Prod)]
@@ -181,11 +182,14 @@ class Problem:
                 neg_part = negs[0].func.args[0]
             else:
                 neg_part = ftypes.Sum(*(a.func.args[0] for a in negs))[0]
-            if len(other) == 1:
-                other_part = other[0]
+
+            if len(other) == 0:
+                new_minus: Func = ftypes.Neg(neg_part)
+            elif len(other) == 1:
+                new_minus = ftypes.Minus(other[0], neg_part)
             else:
                 other_part = ftypes.Sum(*other)[0]
-            new_minus = ftypes.Minus(other_part, neg_part)
+                new_minus = ftypes.Minus(other_part, neg_part)
             new_minus.rebind(func.outs[0])
 
     def fix_sincos(self) -> None:
@@ -251,6 +255,19 @@ class Problem:
             cls = [ftypes.FmaNone, ftypes.FmaOne, ftypes.FmaMany][n_sum]
             new_sum: Func = cls(*other, *fma_prods)
             new_sum.rebind(sum.outs[0])
+
+    def make_unique(self) -> None:
+        funcs: dict[Func, Func] = {}
+        todo: list[Func] = list(self.root_funcs)
+        while todo:
+            func = todo.pop()
+            args = [funcs.setdefault(a.func, a.func)[a.idx] for a in func.args]
+            if any(a is not b for (a, b) in zip(func.args, args)):
+                new_func = func.__class__(*args)
+                for i, out in enumerate(func.outs):
+                    new_func.rebind(out, i)
+                func = new_func
+            todo.extend(arg.func for arg in func.args)
 
     def split_store(self) -> None:
         for func in self.funcs():

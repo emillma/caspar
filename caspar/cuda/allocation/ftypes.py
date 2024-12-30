@@ -46,19 +46,15 @@ class Func:
 
     _hash: int | None = None
 
-    def __init__(self, *args: Var, data: Any = None, outs: list[Var] | None = None) -> None:
+    def __init__(self, *args: Var, data: Any = None) -> None:
         self.args = args
         self.data = data
         self.missing_args = set()
         self.acc_count = 0
 
         assert isinstance(data, (float, int, str)) or data is None
-        if outs is None:
-            self.outs = [Var(self, i) for i in range(self.n_outs)]
-        else:
-            for out in outs:
-                out.set_func(self)
-            self.outs = outs
+
+        self.outs = [Var(self, i) for i in range(self.n_outs)]
 
         assert isinstance(self.args, tuple)
         # assert isinstance(self.outs, tuple)
@@ -69,6 +65,8 @@ class Func:
         return len(self.args)
 
     def rebind(self, var: Var, idx: int = 0) -> None:
+        # if var.func == self:
+        #     return
         var.func = self
         var.idx = idx
         self.outs[idx] = var
@@ -190,12 +188,22 @@ Func_T = Type[Func]
 class Accumulator(Func):
     n_outs = 1
 
+    def __init__(self, *args, data=None):
+        super().__init__(*args, data=data)
+        assert len(args) >= 2
+
 
 class Write(Func):
+    def print(self, _: list[Var], args: list[Var]) -> str:
+        return f"{self.data} = {args[0]}"
+
     n_outs = 0
 
 
 class Read(Func):
+    def print(self, outs: list[Var], _: list[Var]) -> str:
+        return f"{outs[0]} = {self.data}"
+
     def __repr__(self) -> str:
         return str(self.data)
 
@@ -203,89 +211,136 @@ class Read(Func):
 class Store(Func):
     data: float | int
 
+    def print(self, outs: list[Var], _: list[Var]) -> str:
+        return f"{outs[0]} = {self.data}"
+
     def __repr__(self) -> str:
         return str(self.data)
 
 
-class Sum(Accumulator): ...
+class Sum(Accumulator):
+    def print(self, outs: list[Var], args: list[Var]) -> str:
+        return f"{outs[0]} = ({args[0]} + {args[1]})"
 
 
-class Minus(Func): ...
+class Minus(Func):
+    def print(self, outs: list[Var], args: list[Var]) -> str:
+        return f"{outs[0]} = ({args[0]} - {args[1]})"
 
 
-class Prod(Accumulator): ...
+class Prod(Accumulator):
+    def print(self, outs: list[Var], args: list[Var]) -> str:
+        return f"{outs[0]} = ({args[0]} * {args[1]})"
 
 
-class Neg(Func): ...
+class Neg(Func):
+    def print(self, outs: list[Var], args: list[Var]) -> str:
+        return f"{outs[0]} = -{args[0]}"
 
 
-class Div(Func): ...
+class Div(Func):
+    def print(self, outs: list[Var], args: list[Var]) -> str:
+        return f"{outs[0]} = ({args[0]} / {args[1]})"
 
 
 class SinCos(Func):
     n_outs = 2
 
-
-class Cos(Func): ...
-
-
-class Sin(Func): ...
+    def print(self, outs: list[Var], args: list[Var]) -> str:
+        return f"{outs[0]}, {outs[1]} = sincos({args[0]})"
 
 
-class Norm(Func): ...
+class Cos(Func):
+    def print(self, outs: list[Var], args: list[Var]) -> str:
+        return f"{outs[0]} = cos({args[0]})"
 
 
-class RNorm(Func): ...
+class Sin(Func):
+    def print(self, outs: list[Var], args: list[Var]) -> str:
+        return f"{outs[0]} = sin({args[0]})"
 
 
-class Exponent(Func): ...
+class Norm(Func):
+    def print(self, outs: list[Var], args: list[Var]) -> str:
+        return f"{outs[0]} = norm({args[0]})"
 
 
-class Pow(Exponent): ...
+class RNorm(Func):
+    def print(self, outs: list[Var], args: list[Var]) -> str:
+        return f"{outs[0]} = rnorm({args[0]})"
 
 
-class Square(Exponent): ...
+class Exponent(Func):
+    def print(self, outs: list[Var], args: list[Var]) -> str:
+        return f"{outs[0]} = pow({args[0]}, {args[1]})"
 
 
-class Rcp(Exponent): ...
+class Pow(Exponent):
+    def print(self, outs: list[Var], args: list[Var]) -> str:
+        return f"{outs[0]} = pow({args[0]}, {args[1]})"
 
 
-class Sqrt(Exponent): ...
+class Square(Exponent):
+    def print(self, outs: list[Var], args: list[Var]) -> str:
+        return f"{outs[0]} = {args[0]}*{args[0]}"
 
 
-class RSqrt(Exponent): ...
+class Rcp(Exponent):
+    def print(self, outs: list[Var], args: list[Var]) -> str:
+        return f"{outs[0]} = 1.0/{args[0]}"
 
 
-class Cbrt(Exponent): ...
+class Sqrt(Exponent):
+    def print(self, outs: list[Var], args: list[Var]) -> str:
+        return f"{outs[0]} = sqrt({args[0]})"
 
 
-class RCbrt(Exponent): ...
+class RSqrt(Exponent):
+    def print(self, outs: list[Var], args: list[Var]) -> str:
+        return f"{outs[0]} = rsqrt({args[0]})"
 
 
-class Squeeze(Func): ...
+class Cbrt(Exponent):
+    def print(self, outs: list[Var], args: list[Var]) -> str:
+        return f"{outs[0]} = cbrt({args[0]})"
 
 
-class FmaProdTwo(Func): ...
+class RCbrt(Exponent):
+    def print(self, outs: list[Var], args: list[Var]) -> str:
+        return f"{outs[0]} = rcbrt({args[0]})"
 
 
-class FmaProdMany(Func):
+class FmaProd(Func):
+    def print(self, outs: list[Var], args: list[Var]) -> str:
+        if len(args) == 2:
+            return f"{outs[0]} = {args[0]}*{args[1]}"
+        else:
+            return f"{outs[0]} = fma({args[0]}, {args[1]}, {args[2]})"
+
+
+class FmaProdTwo(FmaProd): ...
+
+
+class FmaProdMany(FmaProd):
     def is_acc(self):
         return True
 
 
-class FmaNone(Func):
-    def is_acc(self):
+class Fma(Func):
+    def print(self, outs: list[Var], args: list[Var]) -> str:
+        return f"{outs[0]} = {args[0]} + {args[1]}"
+
+    def is_acc(self) -> bool:
         return True
 
 
-class FmaOne(Func):
-    def is_acc(self):
-        return True
+class FmaNone(Fma): ...
 
 
-class FmaMany(Func):
-    def is_acc(self):
-        return True
+class FmaOne(Fma): ...
+
+
+class FmaMany(Fma): ...
 
 
 acc_funcs = {Sum, Prod}
