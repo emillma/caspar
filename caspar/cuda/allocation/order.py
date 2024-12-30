@@ -77,6 +77,7 @@ class Solver:
         self.ops: list = []
         self.max_stack = 0
         self.current_stack = 0
+        self.to_remove: set[Var] = set()
 
     def allocate(self, add: list[Var]) -> None:
         """Add a variable to stack."""
@@ -102,6 +103,7 @@ class Solver:
 
         if var.missing_contribs.total() == 0:
             self.pop_stack(var)
+            self.to_remove.add(var)
 
     def check_if_ready(self, func: Func) -> None:
         """Check if a function is ready"""
@@ -266,6 +268,7 @@ class Solver:
 
     def reorder(self) -> None:
         while self.not_ready or self.ready:
+            self.to_remove.clear()
             scores = {call: self.score(call) for call in self.ready}
             func = max(self.ready, key=self.score)
             # print(func)
@@ -278,6 +281,7 @@ class Solver:
                 self.start_accumulate(func)
             else:
                 self.do_func(func)
+            self.live_vars -= self.to_remove
 
     def format_reordering(self) -> None:
         ssa_regmap = {}
