@@ -42,19 +42,24 @@ class Problem:
         ls = list(self.root_funcs)
         assert next(iter(self.root_funcs)) in self.root_funcs
 
-        self.fix_pow()
-        self.expand_prods()
-        self.collect_pows()
-        self.fix_sums()
-        self.fix_minus()
+        # self.fix_pow()
+        # self.expand_prods()
+        # self.collect_pows()
+        # self.fix_sums()
+        # self.fix_minus()
         self.fix_prods()
-        self.fix_div()
-        self.fix_sincos()
-        self.fix_norms()
-        self.fix_fma()
-        self.make_unique()
-        self.split_store()
-        None
+        # self.fix_div()
+        # self.fix_sincos()
+        # self.fix_norms()
+        # self.fix_fma()
+        # self.split_store()
+
+        for func in self.funcs():
+            for out in func.outs:
+                assert out.func is func
+
+            for arg in func.args:
+                assert arg.func[arg.idx] is arg
 
     def funcs(self, ftype: Type[Func] | None = None) -> Generator[Func, None, None]:
         """Depth-first traversal of the function graph."""
@@ -72,7 +77,7 @@ class Problem:
     def vars(self) -> Generator[Var, None, None]:
         visited: set[Var] = set()
         for func in self.funcs():
-            for arg in func.args:
+            for arg in func.outs:
                 if arg in visited:
                     continue
                 visited.add(arg)
@@ -138,11 +143,13 @@ class Problem:
             new_prod.rebind(prod.outs[0])
 
     def fix_prods(self) -> None:
-        prods = [p for p in self.funcs(ftypes.Prod)]
-        mul_map = fixers.find_shared_args([p.args for p in prods], 2)
-        for prod in prods:
-            new_prod = fixers.fix_accum(ftypes.Prod, mul_map[prod.args])
-            new_prod.rebind(prod.outs[0])
+        mul_map = fixers.find_shared_args(list(self.funcs(ftypes.Prod)))
+        for func, new_args in mul_map.items():
+            new_prod = ftypes.Prod(*new_args)
+            new_prod.rebind(func.outs[0])
+
+        # for prod in prods:
+        #     new_prod.rebind(prod.outs[0])
 
     def fix_div(self) -> None:
         for var, contribs in self.contribs().items():
@@ -256,28 +263,16 @@ class Problem:
             new_sum: Func = cls(*other, *fma_prods)
             new_sum.rebind(sum.outs[0])
 
-    def make_unique(self) -> None:
-        funcs: dict[Func, Func] = {}
-        todo: list[Func] = list(self.root_funcs)
-        while todo:
-            func = todo.pop()
-            args = [funcs.setdefault(a.func, a.func)[a.idx] for a in func.args]
-            if any(a is not b for (a, b) in zip(func.args, args)):
-                new_func = func.__class__(*args)
-                for i, out in enumerate(func.outs):
-                    new_func.rebind(out, i)
-                func = new_func
-            todo.extend(arg.func for arg in func.args)
-
     def split_store(self) -> None:
+        nstores: Counter[Func] = Counter()
         for func in self.funcs():
             if not any(a.func.is_store() for a in func.args):
                 continue
             args = []
             for arg in func.args:
                 if arg.func.is_store():
-                    new_store = ftypes.Store(data=arg.func.data)
-                    new_store._hash = id(new_store)
+                    nstores[arg.func] += 1
+                    new_store = ftypes.Store(data=arg.func.data, unique_id=nstores[arg.func])
                     args.append(new_store[0])
                 else:
                     args.append(arg)

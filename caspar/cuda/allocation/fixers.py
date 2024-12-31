@@ -2,7 +2,7 @@
 # This source code is under the Apache 2.0 license found in the LICENSE file.
 from fractions import Fraction
 from functools import cache
-from itertools import product
+from itertools import combinations, product
 import time
 from typing import Type
 import symforce.symbolic as sf
@@ -79,33 +79,27 @@ def fix_pow(func: Func) -> Func:
     return inner(func.args[0], exponent).func
 
 
-def find_shared_args(
-    expr_args: list[tuple[Var, ...]], min_shared: int
-) -> dict[tuple[Var, ...], set[Var]]:
-    if not expr_args:
-        return {}
+def find_shared_args(funcs: list[Func]) -> dict[Func, set[Var]]:
+    ftyp = funcs[0].__class__
 
-    maps: dict[tuple[Var, ...], set[sf.Expr]] = {}
-    intersects: list[set[sf.Expr]] = []
-    for i, args in enumerate(expr_args):
-        seta = set(args)
-        maps[args] = seta
-        for other in expr_args[i + 1 :]:
-            if inter := seta & set(other):
-                intersects.append(inter)
+    argmap: dict[Func, set[Var]] = {func: set(func.args) for func in funcs}
+    intersects: dict[tuple[Var, ...], list[Func]] = {}
+
+    for (f0, set0), (f1, set1) in combinations(argmap.items(), 2):
+        inter_set = set0 & set1
+        if len(inter_set) >= 2:
+            intersects.setdefault(tuple(inter_set), []).extend([f0, f1])
+
     while intersects:
-        _, i = max([(len(x), i) for i, x in enumerate(intersects)])
-        inter = intersects.pop(i)
-        if len(inter) < min_shared:
-            break
-        for v in maps.values():
-            if inter <= v:
-                v -= inter
-                v.add(tuple(inter))
-        for other in expr_args:
-            if new_inter := inter & maps[other]:
-                intersects.append(new_inter)
-    return maps
+        inter_tup = max(intersects, key=len)
+        new_thing = ftyp(*inter_tup)
+        targets = intersects.pop(inter_tup)
+        for target in targets:
+            argset = argmap[target]
+            argset -= set(inter_set)
+            argset.add(new_thing[0])
+
+    return argmap
 
 
 def fix_accum(FType: Type[Func], nested_args: tuple[tuple | Var, ...]) -> Func:

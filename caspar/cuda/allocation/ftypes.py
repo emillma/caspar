@@ -4,7 +4,7 @@
 from collections import Counter
 from dataclasses import dataclass
 from dataclasses import field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar, Hashable
 from typing import Any
 from typing import Type
 
@@ -17,12 +17,15 @@ from symengine.lib import symengine_wrapper
 import symforce.symbolic as sf
 
 
-@dataclass(eq=False)
 class Var:
     func: "Func"
-    idx: int = field(default=0)
+    idx: int
     # contribs: set["Func"] = field(default_factory=set)
-    vopt: "VData" = field(default=None)
+    vopt: "VData"
+
+    def __init__(self, func: "Func", idx: int, *, _: None) -> None:
+        self.func = func
+        self.idx = idx
 
     def set_func(self, func: "Func") -> None:
         object.__setattr__(self, "func", func)
@@ -33,8 +36,8 @@ class Var:
     def __hash__(self) -> int:
         return hash((self.func, self.idx))
 
-    def __eq__(self, other: object) -> bool:
-        return isinstance(other, Var) and hash(self) == hash(other)
+    # def __eq__(self, other: object) -> bool:
+    #     return isinstance(other, Var) and hash(self) == hash(other)
 
     def __repr__(self) -> str:
         return str(self.func) + (f"[{self.idx}]" if self.idx else "")
@@ -42,21 +45,27 @@ class Var:
 
 class Func:
     args: tuple[Var, ...]
+    data: Hashable
     outs: list[Var]
+
     n_outs = 1
-    data: float | int | str | None = None
+    unique_id = 0  # used to create duplicate instances
+    fopt: "FData"
+    _instances: ClassVar[dict[tuple, "Func"]] = {}
 
-    fopt: "FData" = None
+    def __new__(cls, *args: Var, data: Any = None, unique_id: int = 0) -> "Func":
+        if (key := (cls, args, data, unique_id)) in cls._instances:
+            return cls._instances[key]
+        return cls._instances.setdefault(key, super().__new__(cls))
 
-    _hash: int | None = None
-
-    def __init__(self, *args: Var, data: Any = None) -> None:
+    def __init__(self, *args: Var, data: Any = None, unique_id: int = 0) -> None:
         self.args = args
         self.data = data
+        self.unique_id = unique_id
 
         assert isinstance(data, (float, int, str)) or data is None
 
-        self.outs = [Var(self, i) for i in range(self.n_outs)]
+        self.outs = [Var(self, i, _=None) for i in range(self.n_outs)]
 
         assert isinstance(self.args, tuple)
         # assert isinstance(self.outs, tuple)
@@ -80,9 +89,7 @@ class Func:
         return f"{self.__class__.__name__}({','.join(map(str, self.args))})"
 
     def __hash__(self) -> int:
-        if self._hash is None:
-            self._hash = hash((self.__class__, self.args, self.data))
-        return self._hash
+        return id(self)
 
     def __eq__(self, other: "Func") -> bool:
         return isinstance(other, Func) and hash(self) == hash(other)
@@ -211,7 +218,7 @@ class Read(Func):
 
 
 class Store(Func):
-    data: float | int
+    data: float
 
     def print(self, outs: list[Var], _: list[Var]) -> str:
         return f"{outs[0]} = {self.data}"

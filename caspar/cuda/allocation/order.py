@@ -60,6 +60,8 @@ class VData:
     missing_contribs: Counter[Func] = field(default_factory=Counter)
     live: bool = field(default=False)
 
+    register: int = field(default=-1)
+
     def is_live(self) -> bool:
         return self.live
 
@@ -96,24 +98,21 @@ class Solver:
         aff1: dict[Func, dict[Func, int]],
         aff2: dict[Func, dict[Func, int]],
     ):
-        unique_test = {}
-        for arg in (a for f in funcs for a in f.args):
-            unique_test.setdefault(arg, set()).add(id(arg))
-        assert all(len(v) == 1 for k, v in unique_test.items() if k.func.n_args != 0)
-
         self.aff1 = aff1
         self.aff2 = aff2
 
-        self.args: set[Var] = {arg for func in funcs for arg in func.args}
+        self.args: set[Var] = {arg for func in funcs for arg in func.outs}
 
         for arg in self.args:
             arg.vopt = VData()
+            arg.vopt.missing_contribs == None
 
         for func in funcs:
             func.fopt = FData(reg_preassure=-func.n_outs)
             func.fopt.missing_args = set(func.args)
             func.fopt.acc_count = 0
             for arg in func.args:
+                assert arg in self.args
                 arg.vopt.missing_contribs.update([func])
 
         self.funcs = funcs
@@ -125,28 +124,21 @@ class Solver:
             for fmaprod in (a.func for a in fma.args if a.func.is_fmaprod()):
                 fmaprod.fopt.fma_parent = fma
 
-        self.reg_count = 0
-        self.regmap: dict[Var, int] = {}
-        self._stack: list[int] = []
-        self.live_vars: set[Var] = set()
         self.ops: list = []
         self.max_stack = 0
         self.current_stack = 0
-        self.to_remove: set[Var] = set()
 
     def allocate(self, add: list[Var]) -> None:
         """Add a variable to stack."""
+
         for var in add:
-            if var in self.regmap:
-                continue
-            if not self._stack:
-                self.max_stack = self.max_stack + 1
-                self._stack.append(self.max_stack - 1)
-            self.regmap[var] = self._stack.pop()
+            var.vopt.register = self.current_stack
+            self.current_stack += 1
+            self.max_stack = max(self.max_stack, self.current_stack)
 
     def pop_stack(self, var: Var) -> None:
         """Remove a variable from stack."""
-        self._stack.append(self.regmap[var])
+        self.current_stack -= 1
 
     def use_var(self, func: Func, var: Var) -> None:
         """Use a variable in a function."""
@@ -158,7 +150,6 @@ class Solver:
 
         if var.vopt.missing_contribs.total() == 0:
             self.pop_stack(var)
-            self.to_remove.add(var)
 
     def check_if_ready(self, func: Func) -> None:
         """Check if a function is ready"""
@@ -306,7 +297,6 @@ class Solver:
     def reorder(self) -> None:
         t0 = time.perf_counter()
         while self.not_ready or self.ready:
-            self.to_remove.clear()
             func = max(self.ready, key=lambda f: f.fopt)
             # print(func.__class__.__name__)
             self.ready.remove(func)
@@ -318,13 +308,12 @@ class Solver:
                 self.start_accumulate(func)
             else:
                 self.do_func(func)
-            self.live_vars -= self.to_remove
         print("Time: ", time.perf_counter() - t0)
         print(self.max_stack)
 
     def format_reordering(self) -> None:
         ssa_regmap = {}
-        regmap = self.regmap
+        regmap = ssa_regmap
         count = 0
         print("")
         fma_prod_couts: Counter[Func] = Counter()
