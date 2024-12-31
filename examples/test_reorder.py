@@ -68,11 +68,11 @@ if __name__ == "__main__":
         # exprs = [sf.sin(sf.sin(sf.sin(a)))]
         # sf.sympify
         # sympy.factor(sf.sympify(exprs[0]).expand())
-        A = sf.Matrix55.symbolic("a")
+        A = sf.Matrix66.symbolic("a")
         # B = sf.Matrix93.symbolic("b")
         exprs = A.inv().to_storage()
         funcs = list(Problem(exprs).funcs())
         aff1, aff2 = prepare(funcs)
         reorderer = Solver(funcs, aff1, aff2)
         reorderer.reorder()
-        reorderer.format_reordering()
+        # reorderer.format_reordering()

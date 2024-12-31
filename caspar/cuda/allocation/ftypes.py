@@ -1,11 +1,16 @@
 # CASPAR - Copyright 2024, Emil Martens, SFI Autoship, NTNU
 # This source code is under the Apache 2.0 license found in the LICENSE file.
+
 from collections import Counter
-import random
 from dataclasses import dataclass
 from dataclasses import field
+from typing import TYPE_CHECKING
 from typing import Any
 from typing import Type
+
+if TYPE_CHECKING:
+    from .order import FData
+    from .order import VData
 
 from symengine.lib import symengine_wrapper
 
@@ -17,7 +22,7 @@ class Var:
     func: "Func"
     idx: int = field(default=0)
     # contribs: set["Func"] = field(default_factory=set)
-    missing_contribs: Counter["Func"] = field(default_factory=Counter)
+    vopt: "VData" = field(default=None)
 
     def set_func(self, func: "Func") -> None:
         object.__setattr__(self, "func", func)
@@ -41,16 +46,13 @@ class Func:
     n_outs = 1
     data: float | int | str | None = None
 
-    missing_args: set[Var]
-    acc_count: int
+    fopt: "FData" = None
 
     _hash: int | None = None
 
     def __init__(self, *args: Var, data: Any = None) -> None:
         self.args = args
         self.data = data
-        self.missing_args = set()
-        self.acc_count = 0
 
         assert isinstance(data, (float, int, str)) or data is None
 
