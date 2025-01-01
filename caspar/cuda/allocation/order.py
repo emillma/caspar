@@ -22,25 +22,30 @@ class FData:
     fma_parent: Func = field(default=None)
     fma_waiting: Var = field(default=None)
 
-    state: int = field(default=0)  # 0: not started, 1: started, 2: finished
+    state: int = field(default=-1)  # -1: not_ready, 0: not started, 1: started, 2: finished
 
     reg_preassure: int = field(default=-1)
     removable: int = field(default=0)
     firable: int = field(default=0)
     aff1: int = field(default=0)
     aff2: int = field(default=0)
+    aff: float = field(default=0.0)
 
     def __lt__(self, other: "FData") -> bool:
         return (
             self.reg_preassure < other.reg_preassure
             or self.removable < other.removable
+            or self.aff < other.aff
             or self.firable < other.firable
-            or self.aff1 < other.aff1
-            or self.aff2 < other.aff2
+            # or self.aff1 < other.aff1
+            # or self.aff2 < other.aff2
         )
 
+    def is_not_ready(self) -> bool:
+        return self.state < 0
+
     def is_not_started(self) -> bool:
-        return self.state == 0
+        return self.state < 1
 
     def is_started(self) -> bool:
         return self.state == 1
@@ -48,11 +53,19 @@ class FData:
     def is_finished(self) -> bool:
         return self.state == 2
 
+    def ready(self) -> None:
+        self.state = 0
+
     def start(self) -> None:
         self.state = 1
 
     def finish(self) -> None:
         self.state = 2
+
+    def update_aff(self, val: int = 1) -> None:
+        self.aff += val
+        for arg in self.missing_args:
+            arg.func.fopt.aff += val
 
 
 @dataclass
@@ -105,7 +118,6 @@ class Solver:
 
         for arg in self.args:
             arg.vopt = VData()
-            arg.vopt.missing_contribs == None
 
         for func in funcs:
             func.fopt = FData(reg_preassure=-func.n_outs)
@@ -116,7 +128,9 @@ class Solver:
                 arg.vopt.missing_contribs.update([func])
 
         self.funcs = funcs
-        self.ready = {f for f in funcs if not f.fopt.missing_args}
+        self.ready: set[Func] = set()
+        for f in sorted(funcs, key=lambda f: f.is_store()):
+            self.check_if_ready(f)
         self.not_ready = {k for k in funcs if k not in self.ready}
 
         # self.fma2fmaprods: dict[Func, set[ftypes.FmaProd]] = {}
@@ -153,7 +167,7 @@ class Solver:
 
     def check_if_ready(self, func: Func) -> None:
         """Check if a function is ready"""
-        if func not in self.not_ready:
+        if not func.fopt.is_not_started():
             return
         elif func.is_fma():
             if func.is_fma_none() or func.is_fma_one():
@@ -173,12 +187,13 @@ class Solver:
                 ready = len(func.fopt.missing_args) <= func.n_args - 2
         elif func.is_acc():
             ready = len(func.fopt.missing_args) <= func.n_args - 2
-
+        # elif func.is_store():
+        #     ready = any(not f.fopt.is_not_ready() for f in func[0].vopt.missing_contribs)
         else:
             ready = not func.fopt.missing_args
 
         if ready:
-            self.not_ready.remove(func)
+            func.fopt.ready()
             self.ready.add(func)
 
     def do_func(self, func: Func) -> None:
@@ -202,21 +217,26 @@ class Solver:
                 self.check_if_ready(contrib)
 
         # Update scores
-        for other in (f for f in self.aff1.get(func, {}) if f.fopt.is_not_started()):
-            other.fopt.aff1 += self.aff1[func][other]
-            for arg in other.args:
-                if all(f is other for f in arg.vopt.missing_contribs):
-                    other.fopt.reg_preassure += 1
+        # for other in (f for f in self.aff1.get(func, {}) if f.fopt.is_not_started()):
+        #     other.fopt.aff1 += self.aff1[func][other]
+        #     for arg in other.args:
+        #         if all(f is other for f in arg.vopt.missing_contribs):
+        #             other.fopt.reg_preassure += 1
 
-            for out in other.outs:
-                if all(f.fopt.is_started() for f in out.vopt.missing_contribs):
-                    other.fopt.removable += 1
-                for contrib in out.vopt.missing_contribs:
-                    if func.fopt.missing_args <= set(other.outs):
-                        other.fopt.firable += 1
+        #     for out in other.outs:
+        #         if all(f.fopt.is_started() for f in out.vopt.missing_contribs):
+        #             other.fopt.removable += 1
+        #         for contrib in out.vopt.missing_contribs:
+        #             if func.fopt.missing_args <= set(other.outs):
+        #                 other.fopt.firable += 1
 
-        for other in (f for f in self.aff2.get(func, {}) if f.fopt.is_not_started()):
-            other.fopt.aff2 += self.aff2[func][other]
+        # for other in (f for f in self.aff2.get(func, {}) if f.fopt.is_not_started()):
+        #     other.fopt.aff2 += self.aff2[func][other]
+
+        for out in func.outs:
+            for contrib in out.vopt.missing_contribs:
+                if not contrib.is_acc():
+                    contrib.fopt.update_aff(1)
 
     def start_fma(self, func: Func) -> None:
         """Start an FMA function."""
@@ -242,8 +262,8 @@ class Solver:
         if func.is_fmaprod_two():
             if fma.is_fma_none() and not fma.fopt.is_started():
                 self.do_func(func)
-
             else:
+                # silently finish fmaprod
                 self.use_var(func, func.args[0])
                 self.use_var(func, func.args[1])
                 self.ops.append((func, func.args[0], func.args[1], fma.outs[0]))
@@ -260,12 +280,15 @@ class Solver:
         """Start accumulating a function."""
         # print("Start accumulate: ", func)
         func.fopt.start()
+
         live_args = [v for v in func.args if v.vopt.is_live()]
         first = max(live_args, key=lambda v: v.vopt.missing_contribs.keys() <= {func})
         self.use_var(func, first)
         for i, v in enumerate(a for a in live_args if a is not first):
             self.accumulate(func, v, first if i == 0 else func.outs[0])
         self.allocate(func.outs)
+        for arg in func.fopt.missing_args:
+            arg.func.fopt.update_aff()
 
     def accumulate(self, func: Func, var: Var, prev: Var) -> None:
         # print("Accumulate: ", func, var)
@@ -273,12 +296,13 @@ class Solver:
         if (
             func.is_fmaprod()
             and func.fopt.acc_count == len(func.args) - 1
-            and ((fma := func.fopt.fma_parent).fopt.is_started() or not fma.is_fma_none())
+            and not ((fma := func.fopt.fma_parent).is_fma_none() and not fma.fopt.is_started())
         ):
             if not fma.fopt.is_started():
                 func.fopt.fma_waiting = var
                 self.check_if_ready(fma)
             else:
+                # silently finish fmaprod
                 self.use_var(func, var)
                 fma.fopt.missing_args.remove(func.outs[0])
                 self.use_var(fma, func.outs[0])
@@ -296,8 +320,10 @@ class Solver:
 
     def reorder(self) -> None:
         t0 = time.perf_counter()
-        while self.not_ready or self.ready:
+        for _ in range(len(self.funcs)):
+            print(_)
             func = max(self.ready, key=lambda f: f.fopt)
+            other = [f for f in self.ready if not f.fopt < func.fopt]
             # print(func.__class__.__name__)
             self.ready.remove(func)
             if func.is_fma():

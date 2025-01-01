@@ -80,6 +80,8 @@ def fix_pow(func: Func) -> Func:
 
 
 def find_shared_args(funcs: list[Func]) -> dict[Func, set[Var]]:
+    if not funcs:
+        return {}
     ftyp = funcs[0].__class__
 
     argmap: dict[Func, set[Var]] = {func: set(func.args) for func in funcs}

@@ -13,7 +13,6 @@ from . import fixers
 from . import ftypes
 from .ftypes import TMAP
 from .ftypes import Func
-from .ftypes import Func_T
 from .ftypes import Var
 
 
@@ -42,18 +41,37 @@ class Problem:
         ls = list(self.root_funcs)
         assert next(iter(self.root_funcs)) in self.root_funcs
 
-        # self.fix_pow()
-        # self.expand_prods()
-        # self.collect_pows()
-        # self.fix_sums()
+        self.fix_pow()
+        self.expand_prods()
+        self.collect_pows()
+        self.fix_sums()
         # self.fix_minus()
         self.fix_prods()
-        # self.fix_div()
-        # self.fix_sincos()
-        # self.fix_norms()
-        # self.fix_fma()
-        # self.split_store()
+        self.fix_div()
+        self.fix_sincos()
+        self.fix_norms()
+        self.fix_fma()
+        self.split_store()
+        self.make_unique()
+        assert len(set(self.funcs())) == len(list(self.funcs()))
 
+    def make_unique(self) -> None:
+        to_visit: list[Func] = list(self.root_funcs)
+        unique_arg: dict[Var, Var] = {}
+        while to_visit:
+            func = to_visit.pop(-1)
+            update = False
+            for arg in func.args:
+                if arg not in unique_arg:
+                    unique_arg[arg] = arg
+                    to_visit.append(arg.func)
+                    continue
+                if unique_arg[arg] is not arg:
+                    update = True
+            if update:
+                func.update_args(*(unique_arg[a] for a in func.args))
+
+    def check_unique(self) -> None:
         for func in self.funcs():
             for out in func.outs:
                 assert out.func is func
@@ -61,15 +79,26 @@ class Problem:
             for arg in func.args:
                 assert arg.func[arg.idx] is arg
 
+        to_visit: list[Func] = list(self.root_funcs)
+        unique_funcs: dict[Func, Func] = {}
+        while to_visit:
+            func = to_visit.pop(-1)
+            assert all(func[i].func is func for i in range(func.n_outs))
+            if func in unique_funcs:
+                assert unique_funcs[func] is func
+                continue
+            unique_funcs[func] = func
+            to_visit.extend(v.func for v in func.args)
+
     def funcs(self, ftype: Type[Func] | None = None) -> Generator[Func, None, None]:
         """Depth-first traversal of the function graph."""
-        visited: set[Func] = set()
+        visited: set[int] = set()
         to_visit = list(self.root_funcs)
         while to_visit:
             func = to_visit.pop(-1)
-            if func in visited:
+            if id(func) in visited:
                 continue
-            visited.add(func)
+            visited.add(id(func))
             if ftype is None or isinstance(func, ftype):
                 yield func
             to_visit.extend(v.func for v in func.args)
@@ -129,7 +158,7 @@ class Problem:
                 common.setdefault(arg.func.args[1], []).append(arg.func.args[0])
             for exp, bases in common.items():
                 if len(bases) == 1:
-                    args.append(ftypes.Pow(base, exp)[0])
+                    args.append(ftypes.Pow(bases[0], exp)[0])
                 else:
                     base = ftypes.Prod(*bases)[0]
                     to_check.append(base.func)
@@ -161,11 +190,10 @@ class Problem:
             new_div.rebind(contribs[0].outs[0])
 
     def fix_sums(self) -> None:
-        sums = [s for s in self.funcs(ftypes.Sum)]
-        sum_map = fixers.find_shared_args([s.args for s in sums], 2)
-        for sum in sums:
-            new_sum = fixers.fix_accum(ftypes.Sum, sum_map[sum.args])
-            new_sum.rebind(sum.outs[0])
+        sum_map = fixers.find_shared_args(list(self.funcs(ftypes.Sum)))
+        for func, new_args in sum_map.items():
+            new_prod = ftypes.Sum(*new_args)
+            new_prod.rebind(func.outs[0])
 
     def fix_minus(self) -> None:
         for func in self.funcs(ftypes.Prod):
@@ -242,7 +270,7 @@ class Problem:
             unique_prods: list[ftypes.Prod] = []
             other = []
             for arg in sum.args:
-                if arg.func.is_prod() or arg.func.is_square() and len(contribs[arg]) == 1:
+                if (arg.func.is_prod() or arg.func.is_square()) and len(contribs[arg]) == 1:
                     if arg.func.is_square():
                         new_prod = ftypes.Prod(arg.func.args[0], arg.func.args[0])
                         new_prod.rebind(arg)

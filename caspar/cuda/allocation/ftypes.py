@@ -26,6 +26,7 @@ class Var:
     def __init__(self, func: "Func", idx: int, *, _: None) -> None:
         self.func = func
         self.idx = idx
+        assert idx < func.n_outs
 
     def set_func(self, func: "Func") -> None:
         object.__setattr__(self, "func", func)
@@ -36,8 +37,8 @@ class Var:
     def __hash__(self) -> int:
         return hash((self.func, self.idx))
 
-    # def __eq__(self, other: object) -> bool:
-    #     return isinstance(other, Var) and hash(self) == hash(other)
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, Var) and self.func == other.func and self.idx == other.idx
 
     def __repr__(self) -> str:
         return str(self.func) + (f"[{self.idx}]" if self.idx else "")
@@ -46,29 +47,28 @@ class Var:
 class Func:
     args: tuple[Var, ...]
     data: Hashable
+    unique_id = 0  # used to create duplicate instances
+
     outs: list[Var]
 
     n_outs = 1
-    unique_id = 0  # used to create duplicate instances
     fopt: "FData"
-    _instances: ClassVar[dict[tuple, "Func"]] = {}
+    _hash: int
+    # _instances: ClassVar[dict[tuple, "Func"]] = {}
 
-    def __new__(cls, *args: Var, data: Any = None, unique_id: int = 0) -> "Func":
-        if (key := (cls, args, data, unique_id)) in cls._instances:
-            return cls._instances[key]
-        return cls._instances.setdefault(key, super().__new__(cls))
+    # def __new__(cls, *args: Var, data: Any = None, unique_id: int = 0) -> "Func":
+    #     if (key := (cls, args, data, unique_id)) in cls._instances:
+    #         return cls._instances[key]
+    #     return cls._instances.setdefault(key, super().__new__(cls))
 
     def __init__(self, *args: Var, data: Any = None, unique_id: int = 0) -> None:
         self.args = args
         self.data = data
         self.unique_id = unique_id
-
-        assert isinstance(data, (float, int, str)) or data is None
-
+        self._hash = hash((self.__class__, self.args, self.data, self.unique_id))
         self.outs = [Var(self, i, _=None) for i in range(self.n_outs)]
 
-        assert isinstance(self.args, tuple)
-        # assert isinstance(self.outs, tuple)
+        assert isinstance(data, (float, int, str)) or data is None
         assert all([isinstance(arg, Var) for arg in self.args])
 
     @property
@@ -82,17 +82,28 @@ class Func:
         var.idx = idx
         self.outs[idx] = var
 
+    def update_args(self, *args: Var) -> None:
+        assert args == self.args
+        assert hash(args) == hash(self.args)
+        self.args = args
+
     def __getitem__(self, idx: int) -> Var:
         return self.outs[idx]
 
     def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(...)"
         return f"{self.__class__.__name__}({','.join(map(str, self.args))})"
 
     def __hash__(self) -> int:
-        return id(self)
+        return self._hash
 
-    def __eq__(self, other: "Func") -> bool:
-        return isinstance(other, Func) and hash(self) == hash(other)
+    def __eq__(self, other: object) -> bool:
+        return (
+            isinstance(other, self.__class__)
+            and self.args == other.args
+            and self.data == other.data
+            and self.unique_id == other.unique_id
+        )
 
     def is_write(self) -> bool:
         return isinstance(self, Write)

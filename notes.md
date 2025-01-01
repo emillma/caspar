@@ -1,9 +1,12 @@
-# SymCUDA 
+# SymCUDA
+
 It's about time I updated the readme...
-There are now two examples, the first one solves the biggest bundle adjustment problem from the BAL dataset (3s on my 4090) and the other is a small illustration showcasing how different types of factors can be used together. Both also showcase how symbolic functions can be trasformed to CODA kernels. 
+There are now two examples, the first one solves the biggest bundle adjustment problem from the BAL dataset (3s on my 4090) and the other is a small illustration showcasing how different types of factors can be used together. Both also showcase how symbolic functions can be trasformed to CODA kernels.
 
 ### TODO
+
 There are a lot of things to add to the solver and tests to write, including
+
 - Equality and inequality constraints
 - Better overview of solver options
 - Dynamic update of problems (e.g. add points and cameras)
@@ -28,7 +31,7 @@ There are a lot of things to add to the solver and tests to write, including
 - Implement incremental methods (Use analytic hessian for step tolerance)
 - Add preconditioner for band tridiagonal structures
 - Share cse between factors when indices are known (e.g. preintegration)
-- Add quality of life stuff like getting covariance between nodes  
+- Add quality of life stuff like getting covariance between nodes
 - Share data between arguments of same type
 - Use analytic hessian (Initial test shows bad results)
 - Allow inout args (read and write to same arg)
@@ -39,37 +42,47 @@ There are a lot of things to add to the solver and tests to write, including
 ### Maintainability / code quality
 
 ### Constraints
+
 - Nullspace
 - Augmented Lagrangian
 
 ### Incremental solver
+
 - Check if step is large enough to require linealization
 - Add later developments from ISAM2 and others
 
 ### Register allocation
+
 - Imprement https://arxiv.org/abs/2309.03765
 - Implement read write as a functions?
 - Add MIMO functions (for sincos, coalesced read/write)
 
 ### Launcher performance
+
 - Use streams
-- Graph capture 
+- Graph capture
 - Dynamic kernel launch (cuda only solver?)
 
 ### PCG performance
+
 - Monitor step quality inside PCG
 - First stepp partially conjugent on last final step (less sensitive to inner iterations?)
 
-
 ### Robustness (and speed?)
+
 - Dynamic epsilon
 - Float64 + tensor cores (8x8x4 supported)
 
 ### Tensor cores
+
 - Float64 (8x8x4)
-- __nv_bfloat16 (32x8x16)
+- \_\_nv_bfloat16 (32x8x16)
 
 ### Direct SLAM / registration problems
-- Use texture memory
-- Custiom *register* symbolic functions?
 
+- Use texture memory
+- Custiom _register_ symbolic functions?
+
+### Improvements to symbolic handling
+
+- Check for repeated calculations (a+b)^2 and a^2+2ab+b^2 have different hash.
