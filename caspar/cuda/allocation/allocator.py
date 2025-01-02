@@ -283,12 +283,11 @@ class Problem:
 
             fma_prods = []
             for p in unique_prods:
-                cls = ftypes.FmaProdTwo if len(p.args) == 2 else ftypes.FmaProdMany
+                cls = ftypes.FmaProdTwo if len(p.args) == 2 else ftypes.FmaProd
                 fma_prods.append(cls(*p.args)[0])
 
-            n_sum = min(len(other), 2)
-            cls = [ftypes.FmaNone, ftypes.FmaOne, ftypes.FmaMany][n_sum]
-            new_sum: Func = cls(*other, *fma_prods)
+            fmacls = [ftypes.FmaNone, ftypes.Fma][len(other) > 0]
+            new_sum: Func = fmacls(*other, *fma_prods)
             new_sum.rebind(sum.outs[0])
 
     def split_store(self) -> None:

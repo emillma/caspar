@@ -162,11 +162,8 @@ class Func:
     def is_rcbrt(self) -> bool:
         return isinstance(self, RCbrt)
 
-    def is_squeeze(self) -> bool:
-        return isinstance(self, Squeeze)
-
     def is_acc(self) -> bool:
-        return isinstance(self, Accumulator) and self.n_args > 2
+        return isinstance(self, Accumulator)
 
     def is_anypow(self) -> bool:
         return isinstance(self, Exponent)
@@ -180,23 +177,23 @@ class Func:
     def is_fma_none(self) -> bool:
         return isinstance(self, FmaNone)
 
-    def is_fma_one(self) -> bool:
-        return isinstance(self, FmaOne)
+    # def is_fma_one(self) -> bool:
+    #     return isinstance(self, FmaOne)
 
-    def is_fma_many(self) -> bool:
-        return isinstance(self, FmaMany)
+    # def is_fma_many(self) -> bool:
+    #     return isinstance(self, FmaMany)
 
     def is_fmaprod_two(self) -> bool:
         return isinstance(self, FmaProdTwo)
 
-    def is_fmaprod_many(self) -> bool:
-        return isinstance(self, FmaProdMany)
+    # def is_fmaprod_many(self) -> bool:
+    #     return isinstance(self, FmaProdMany)
 
     def is_fma(self) -> bool:
-        return isinstance(self, (FmaNone, FmaOne, FmaMany))
+        return isinstance(self, Fma)
 
     def is_fmaprod(self) -> bool:
-        return isinstance(self, (FmaProdTwo, FmaProdMany))
+        return isinstance(self, FmaProd)
 
     def is_neg(self) -> bool:
         return isinstance(self, Neg)
@@ -207,10 +204,6 @@ Func_T = Type[Func]
 
 class Accumulator(Func):
     n_outs = 1
-
-    def __init__(self, *args, data=None):
-        super().__init__(*args, data=data)
-        assert len(args) >= 2
 
 
 class Write(Func):
@@ -330,37 +323,32 @@ class RCbrt(Exponent):
         return f"{outs[0]} = rcbrt({args[0]})"
 
 
-class FmaProd(Func):
+class FmaProd(Accumulator):
     def print(self, outs: list[Var], args: list[Var]) -> str:
-        if len(args) == 2:
-            return f"{outs[0]} = {args[0]}*{args[1]}"
-        else:
-            return f"{outs[0]} = fma({args[0]}, {args[1]}, {args[2]})"
+        return f"{outs[0]} = {args[0]}*{args[1]}"
 
 
 class FmaProdTwo(FmaProd): ...
 
 
-class FmaProdMany(FmaProd):
-    def is_acc(self):
-        return True
+# class FmaProdMany(FmaProd): ...
 
 
-class Fma(Func):
+class Fma(Accumulator):
     def print(self, outs: list[Var], args: list[Var]) -> str:
-        return f"{outs[0]} = {args[0]} + {args[1]}"
-
-    def is_acc(self) -> bool:
-        return True
+        if len(args) == 2:
+            return f"{outs[0]} = {args[0]} + {args[1]}"
+        else:
+            return f"{outs[0]} = {args[0]} * {args[1]} + {args[2]}"
 
 
 class FmaNone(Fma): ...
 
 
-class FmaOne(Fma): ...
+# class FmaOne(Fma): ...
 
 
-class FmaMany(Fma): ...
+# class FmaMany(Fma): ...
 
 
 acc_funcs = {Sum, Prod}
