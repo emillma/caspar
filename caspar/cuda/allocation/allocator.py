@@ -50,9 +50,11 @@ class Problem:
         self.fix_div()
         self.fix_sincos()
         self.fix_norms()
-        self.fix_fma()
+        # self.fix_fma()
         self.split_store()
+        self.split_acc()
         self.make_unique()
+
         assert len(set(self.funcs())) == len(list(self.funcs()))
 
     def make_unique(self) -> None:
@@ -305,3 +307,11 @@ class Problem:
                     args.append(arg)
             new_func = func.__class__(*args)
             new_func.rebind(func.outs[0])
+
+    def split_acc(self) -> None:
+        for ftype in [ftypes.Sum, ftypes.Prod]:
+            for prod in self.funcs(ftype):
+                starter = ftypes.StartAcc(data=prod)
+                starter.rebind(prod.outs[0])
+                for arg in prod.args:
+                    self.root_funcs.append(ftypes.DoAcc(starter[0], arg, data=prod))

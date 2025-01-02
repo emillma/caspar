@@ -100,51 +100,20 @@ class VData:
     var: Var
     missing_contribs: Counter[Func] = field(default_factory=Counter)
     live: bool = field(default=False)
-    virtual: bool = field(init=False)
     register: int = field(default=-1)
+    missing_acc: int = field(default=0)
 
     def __post_init__(self) -> None:
         self.virtual = self.var.func.is_fmaprod_two()
+        if self.var.func.is_start_acc():
+            self.missing_acc = self.var.func.data.n_args
 
     def is_live(self) -> bool:
         return self.live
 
 
-def prepare(
-    funcs: list[Func],
-) -> tuple[
-    dict[Func, dict[Func, int]],
-    dict[Func, dict[Func, int]],
-]:
-    aff1: dict[Func, dict[Func, int]] = {}
-    for func in (f for f in funcs if not f.is_acc()):
-        for arg0, arg1 in product(func.args, func.args):
-            if arg0 is arg1:
-                continue  # avoid self-affinity
-            aff1.setdefault(arg0.func, {}).setdefault(arg1.func, 0)
-            aff1[arg0.func][arg1.func] += 1
-
-    aff2: dict[Func, dict[Func, int]] = {}
-    for func, func2aff in aff1.items():
-        for (func0, aval0), (func1, aval1) in product(func2aff.items(), func2aff.items()):
-            if func0 is func1:
-                continue  # avoid self-affinity
-            aff2.setdefault(func0, {}).setdefault(func1, 0)
-            aff2[func0][func1] += aval0 + aval1
-
-    return aff1, aff2
-
-
 class Solver:
-    def __init__(
-        self,
-        funcs: list[Func],
-        aff1: dict[Func, dict[Func, int]],
-        aff2: dict[Func, dict[Func, int]],
-    ):
-        self.aff1 = aff1
-        self.aff2 = aff2
-
+    def __init__(self, funcs: list[Func]):
         self.args: set[Var] = {arg for func in funcs for arg in func.outs}
 
         for arg in self.args:
@@ -207,8 +176,6 @@ class Solver:
         """Check if a function is ready"""
         if not func.fopt.is_not_ready():
             return
-        elif func.is_acc():
-            ready = len(func.fopt.missing_args) <= func.n_args - 2
         # elif func.is_store():
         #     ready = any(not f.fopt.is_not_ready() for f in func[0].vopt.missing_contribs)
         else:
@@ -223,76 +190,42 @@ class Solver:
         for v in func.args:
             self.use_var(func, v)
         self.allocate(func.outs)
-        self.ops.append((func, *func.args))
-        self.finish_func(func)
+        self.ops.append(func)
+        for out in func.outs:
+            self.finish_var(out)
 
-    def finish_func(self, func: Func) -> None:
+    def finish_var(self, out: Var) -> None:
         """Finish a function."""
-        # print("Finish: ", func)
-        func.fopt.finish()
-        for out in func.outs:
-            for contrib in out.vopt.missing_contribs:
-                contrib.fopt.update_aff1(1, -self.turn)
 
-        for out in func.outs:
-            out.vopt.live = True
-            for contrib in out.vopt.missing_contribs.copy():
-                contrib.fopt.missing_args.remove(out)
-                if contrib.is_acc() and contrib.fopt.is_started():
-                    self.accumulate(contrib, out, contrib.outs[0])
-                self.check_if_ready(contrib)
+        for contrib in out.vopt.missing_contribs:
+            contrib.fopt.update_aff1(1, -self.turn)
 
-    def start_accumulate(self, func: Func) -> None:
+        out.vopt.live = True
+        for contrib in out.vopt.missing_contribs.copy():
+            contrib.fopt.missing_args.remove(out)
+            self.check_if_ready(contrib)
+
+    def start_acc(self, func: Func) -> None:
         """Start accumulating a function."""
         # print("Start accumulate: ", func)
-
-        func.fopt.start()
-
-        live_args = [v for v in func.args if v.vopt.is_live()]
-        first = max(live_args, key=lambda v: v.vopt.missing_contribs.keys() <= {func})
-        if not func.is_fmaprod_two():
-            self.use_var(func, first)
-        func.fopt.acc_count += 1
-
-        for i, v in enumerate(a for a in live_args if a is not first):
-            self.accumulate(func, v, first if i == 0 else func.outs[0])
         self.allocate(func.outs)
+        for acc in (f for f in func[0].vopt.missing_contribs if f.is_do_acc()):
+            acc.fopt.missing_args.remove(func[0])
+            self.check_if_ready(acc)
 
-    def accumulate(self, func: Func, var: Var, prev: Var) -> None:
-        func.fopt.acc_count += 1
-
-        if func.is_fmaprod():
-            if func.fopt.acc_count == func.n_args:
-                if func.fopt.fma_parent.fopt.fma_need_one:
-                    self.use_var(func, var)
-                    self.ops.append((func, var, prev))
-                    self.finish_func(func)
-                else:
-                    func.fopt.fma_prev = prev
-                    func.fopt.fma_last = var
-            else:
-                self.use_var(func, var)
-                self.ops.append((func, var, prev))
-
-        if func.is_fma() and var.func.is_fmaprod():
-            if not var.vopt.virtual:
-                self.use_var(var.func, var.func.fopt.fma_prev)
-            self.use_var(var.func, var.func.fopt.fma_last)
-            self.use_var(func, var)
-            self.ops.append((func, var.func.fopt.fma_last, var.func.fopt.fma_prev, prev))
-
-        else:
-            self.use_var(func, var)
-            self.ops.append((func, var, prev))
-
-        if func.fopt.acc_count == func.n_args:
-            self.finish_func(func)
+    def do_acc(self, func: ftypes.DoAcc) -> None:
+        self.ops.append(func)
+        self.use_var(func, func.args[0])
+        self.use_var(func, func.args[1])
+        func.args[0].vopt.missing_acc -= 1
+        if func.args[0].vopt.missing_acc == 0:
+            self.finish_var(func.args[0])
 
     def reorder(self) -> None:
         t0 = time.perf_counter()
         for self.turn in range(len(self.funcs)):
             # print(_)
-            not_ready = [f for f in self.ready if f.fopt.is_not_ready()]
+            not_ready = [f for f in self.funcs if f.fopt.is_not_ready()]
             func = max(self.ready, key=lambda f: f.fopt)
             assert func.fopt.state == 0
             costs = {f: f.fopt.key() for f in self.ready}
@@ -300,12 +233,14 @@ class Solver:
             print(func)
             self.ready.remove(func)
             # print(func.__class__.__name__)
-            if func.is_acc():  # accumulate
-                self.start_accumulate(func)
+            if func.is_start_acc():  # accumulate
+                self.start_acc(func)
+            elif func.is_do_acc():
+                self.do_acc(func)
             else:
                 self.do_func(func)
 
-        assert all(f.fopt.is_finished() for f in self.funcs)
+        # assert all(f.fopt.is_finished() for f in self.funcs)
         print("Time: ", time.perf_counter() - t0)
         print(self.max_stack)
 
@@ -315,8 +250,8 @@ class Solver:
         count = 0
         print("")
         fma_prod_couts: Counter[Func] = Counter()
-        for op in self.ops:
-            func, *args = op
+        for func in self.ops:
+            args = func.args
             outs = func.outs
 
             arg_str = [f"r{a.vopt.register}" for a in args]

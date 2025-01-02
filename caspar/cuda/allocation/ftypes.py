@@ -68,7 +68,7 @@ class Func:
         self._hash = hash((self.__class__, self.args, self.data, self.unique_id))
         self.outs = [Var(self, i, _=None) for i in range(self.n_outs)]
 
-        assert isinstance(data, (float, int, str)) or data is None
+        assert isinstance(data, (float, int, str, Func)) or data is None
         assert all([isinstance(arg, Var) for arg in self.args])
 
     @property
@@ -91,7 +91,7 @@ class Func:
         return self.outs[idx]
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(...)"
+        # return f"{self.__class__.__name__}(...)"
         return f"{self.__class__.__name__}({','.join(map(str, self.args))})"
 
     def __hash__(self) -> int:
@@ -162,8 +162,8 @@ class Func:
     def is_rcbrt(self) -> bool:
         return isinstance(self, RCbrt)
 
-    def is_acc(self) -> bool:
-        return isinstance(self, Accumulator)
+    # def is_acc(self) -> bool:
+    #     return isinstance(self, Accumulator)
 
     def is_anypow(self) -> bool:
         return isinstance(self, Exponent)
@@ -197,6 +197,12 @@ class Func:
 
     def is_neg(self) -> bool:
         return isinstance(self, Neg)
+
+    def is_start_acc(self) -> bool:
+        return isinstance(self, StartAcc)
+
+    def is_do_acc(self) -> bool:
+        return isinstance(self, DoAcc)
 
 
 Func_T = Type[Func]
@@ -343,6 +349,21 @@ class Fma(Accumulator):
 
 
 class FmaNone(Fma): ...
+
+
+class StartAcc(Func):
+    data: Func
+
+    def print(self, outs: list[Var], args: list[Var]) -> str:
+        return f"nop"
+
+
+class DoAcc(Func):
+    n_outs = 0
+    data: Func
+
+    def print(self, outs: list[Var], args: list[Var]) -> str:
+        return f"{args[0]} += {args[1]}"
 
 
 # class FmaOne(Fma): ...

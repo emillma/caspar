@@ -10,7 +10,6 @@ import sympy
 import symforce.symbolic as sf
 from caspar.cuda.allocation import Problem
 from caspar.cuda.allocation import Solver
-from caspar.cuda.allocation import prepare
 
 symforce.set_symbolic_api("symengine")
 symforce.set_log_level("warning")
@@ -58,7 +57,7 @@ if __name__ == "__main__":
         letters = [chr(randint(97, 122)) for _ in range(6)]
         letters = [chr(97 + i) for i in range(6)]
         a, b, c, d, e, f = sf.symbols(" ".join(letters))
-        exprs = [a * b * d + c]
+        exprs = [a + b]
         # exprs = [sf.sin((a + 1) * 2)]
         # exprs = [sf.sin(a + b) + (c * 3)]
 
@@ -71,9 +70,9 @@ if __name__ == "__main__":
         A = sf.Matrix22.symbolic("a")
         B = sf.Matrix22.symbolic("b")
         # exprs = A.inv().to_storage()
-        exprs = (A * B).to_storage()
+        # exprs = (A * B).to_storage()
         funcs = list(Problem(exprs).funcs())
-        aff1, aff2 = prepare(funcs)
-        reorderer = Solver(funcs, aff1, aff2)
+        # aff1, aff2 = prepare(funcs)
+        reorderer = Solver(funcs)
         reorderer.reorder()
         reorderer.format_reordering()
