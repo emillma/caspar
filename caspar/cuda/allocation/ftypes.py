@@ -323,9 +323,7 @@ class RCbrt(Exponent):
         return f"{outs[0]} = rcbrt({args[0]})"
 
 
-class FmaProd(Accumulator):
-    def print(self, outs: list[Var], args: list[Var]) -> str:
-        return f"{outs[0]} = {args[0]}*{args[1]}"
+class FmaProd(Prod): ...
 
 
 class FmaProdTwo(FmaProd): ...
@@ -334,7 +332,7 @@ class FmaProdTwo(FmaProd): ...
 # class FmaProdMany(FmaProd): ...
 
 
-class Fma(Accumulator):
+class Fma(Sum):
     def print(self, outs: list[Var], args: list[Var]) -> str:
         if len(args) == 2:
             return f"{outs[0]} = {args[0]} + {args[1]}"
@@ -354,9 +352,6 @@ class StartAcc(Func):
 
 class Contribute(Func):
     data: Func
-
-    def print(self, outs: list[Var], args: list[Var]) -> str:
-        return f"{args[0]} += {args[1]}"
 
 
 # class FmaOne(Fma): ...

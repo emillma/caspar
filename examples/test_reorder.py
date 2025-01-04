@@ -57,7 +57,7 @@ if __name__ == "__main__":
         letters = [chr(randint(97, 122)) for _ in range(6)]
         letters = [chr(97 + i) for i in range(6)]
         a, b, c, d, e, f = sf.symbols(" ".join(letters))
-        exprs = [a * b + c * d, a * d]
+        exprs = [a * b + c]
         # exprs = [sf.sin((a + 1) * 2)]
         # exprs = [sf.sin(a + b) + (c * 3)]
 
@@ -67,9 +67,9 @@ if __name__ == "__main__":
         # exprs = [sf.sin(sf.sin(sf.sin(a)))]
         # sf.sympify
         # sympy.factor(sf.sympify(exprs[0]).expand())
-        A = sf.Matrix99.symbolic("a")
-        B = sf.Matrix99.symbolic("b")
-        # exprs = A.inv().to_storage()
+        A = sf.Matrix55.symbolic("a")
+        B = sf.Matrix55.symbolic("b")
+        exprs = A.inv().to_storage()
         exprs = (A * B).to_storage()
         funcs = list(Problem(exprs).funcs())
         # aff1, aff2 = prepare(funcs)

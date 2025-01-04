@@ -2,7 +2,7 @@
 # This source code is under the Apache 2.0 license found in the LICENSE file.
 
 from collections import Counter
-from typing import Generator
+from typing import Generator, Iterable
 from typing import Type
 
 from symengine.lib import symengine_wrapper
@@ -92,18 +92,22 @@ class Problem:
             unique_funcs[func] = func
             to_visit.extend(v.func for v in func.args)
 
-    def funcs(self, ftype: Type[Func] | None = None) -> Generator[Func, None, None]:
+    def funcs(
+        self,
+        ftype: Type[Func] | None = None,
+        to_visit: Iterable[Func] | None = None,
+        visited: set[int] | None = None,
+    ) -> Generator[Func, None, None]:
         """Depth-first traversal of the function graph."""
-        visited: set[int] = set()
-        to_visit = list(self.root_funcs)
-        while to_visit:
-            func = to_visit.pop(-1)
+        visited = visited or set()
+        to_visit = to_visit or self.root_funcs
+        for func in to_visit:
             if id(func) in visited:
                 continue
             visited.add(id(func))
+            yield from self.funcs(ftype, (arg.func for arg in func.args), visited)
             if ftype is None or isinstance(func, ftype):
                 yield func
-            to_visit.extend(v.func for v in func.args)
 
     def vars(self) -> Generator[Var, None, None]:
         visited: set[Var] = set()
@@ -311,7 +315,7 @@ class Problem:
     def split_acc(self) -> None:
         i = 1
         for ftype in [ftypes.Sum, ftypes.Prod]:
-            for accumulator in self.funcs(ftype):
+            for accumulator in list(self.funcs(ftype)):
                 args = [ftypes.Contribute(arg, unique_id=i)[0] for arg in accumulator.args]
-                ftype(*args).rebind(accumulator.outs[0])
+                ftype(*args).rebind(accumulator[0])
                 i += 1

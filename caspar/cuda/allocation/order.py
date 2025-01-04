@@ -20,7 +20,7 @@ class FData:
     func: Func
     missing_args: set[Var] = field(init=False)
 
-    acc_parent: Func = field(init=False)
+    acc_parent: Func = field(default=None)
     acc_waiting: Func = field(init=False)
     acc_count: int = field(default=0)
 
@@ -30,29 +30,29 @@ class FData:
 
     state: int = field(default=0)  # 0: not ready, 1: ready, 2: done
 
-    reg_preassure: int = field(init=False)
-    removable: list[bool] = field(default=0)
+    freeable: int = field(init=False)
+
     firable: int = field(default=0)
+    aff1: float = field(default=0.0)
     priority: int = field(default=-(2**32))
     aff2: int = field(default=0)
-    aff1: float = field(default=0.0)
 
     def __post_init__(self) -> None:
         self.missing_args = set(self.func.args)
-
-        self.reg_preassure = -self.func.n_outs
+        self.freeable = 0 if self.func.is_accumulator() else -self.func.n_outs
 
     def __lt__(self, other: "FData") -> bool:
         return (
-            self.reg_preassure < other.reg_preassure or self.aff1 < other.aff1
-            # or self.priority < other.priority
+            self.freeable < other.freeable
+            or self.aff1 < other.aff1
+            or self.priority < other.priority
             # or self.aff1 < other.aff1
             # or self.aff2 < other.aff2
             # or self.firable < other.firable
         )
 
     def key(self) -> tuple:
-        return (self.reg_preassure, self.aff1, self.priority)
+        return (self.freeable, self.aff1, self.priority)
 
     def is_not_ready(self) -> bool:
         return self.state == 0
@@ -70,26 +70,17 @@ class FData:
         # assert self.m
         self.state = 2
 
-    def update_aff1(self, val: int, priority: int, done: set[Func] = None) -> None:
+    def update_aff1(self, val: float, priority: int | None, done: set[Func] = None) -> None:
         self.aff1 += val
-        self.priority = max(self.priority, priority)
+        if priority is not None:
+            self.priority = max(self.priority, priority)
         if done is None:
             done = set()
         elif self.func in done:
             return
-        for arg in self.missing_args:
-            arg.func.fopt.update_aff1(val=val, priority=priority, done=done)
-        done.add(self.func)
-
-    def update_aff2(self, val: int = 1, done: set[Func] = None) -> None:
-        self.aff2 += val
-        # if done is None:
-        #     done = set()
-        # elif self.func in done:
-        #     return
         # for arg in self.missing_args:
-        #     arg.func.fopt.update_aff2(done=done)
-        # done.add(self.func)
+        #     arg.func.fopt.update_aff1(val=val, priority=priority, done=done)
+        done.add(self.func)
 
 
 @dataclass
@@ -120,9 +111,12 @@ class Solver:
                 assert arg in self.args
                 arg.vopt.missing_contribs.update([func])
 
-        for func in (f for f in funcs if f.is_accumulator()):
+        for func in funcs:
             for arg in func.args:
-                arg.func.fopt.acc_parent = func
+                if func.is_accumulator():
+                    arg.func.fopt.acc_parent = func
+                if len(arg.vopt.missing_contribs) == 1:
+                    func.fopt.freeable += 1
 
         self.funcs = funcs
         self.ready: list[Func] = []
@@ -170,8 +164,8 @@ class Solver:
         if var.vopt.missing_contribs.total() == 0 and not var.is_virtual():
             self.pop_stack(var)
 
-        elif sum(n > 0 for n in var.vopt.missing_contribs.values()) == 1:
-            next(iter(var.vopt.missing_contribs)).fopt.reg_preassure += 1
+        elif len(var.vopt.missing_contribs) == 1:
+            next(iter(var.vopt.missing_contribs)).fopt.freeable += 1
 
     def check_if_ready(self, func: Func) -> None:
         """Check if a function is ready"""
@@ -207,26 +201,30 @@ class Solver:
 
     def do_contribute(self, func: ftypes.Contribute) -> None:
         acc = func.fopt.acc_parent
+        acc.fopt.acc_count += 1
+        prev: Var
 
-        if acc.fopt.acc_count == 0:
+        if acc.fopt.acc_count == 1:
             acc.fopt.acc_waiting = func
+            for arg in acc.fopt.missing_args:
+                arg.func.fopt.update_aff1(1, -self.turn)
+                arg.func.fopt.freeable += 1
 
-        elif acc.fopt.acc_count == 1:
+        elif acc.fopt.acc_count == 2:
             self.use_var(acc.fopt.acc_waiting, acc.fopt.acc_waiting.args[0])
             self.use_var(func, func.args[0])
 
             self.allocate(acc.outs)
             acc.fopt.missing_args.remove(acc.fopt.acc_waiting[0])
             acc.fopt.missing_args.remove(func[0])
-
-            self.ops.append((acc, acc.fopt.acc_waiting.args[0], func.args[0]))
+            prev = acc.fopt.acc_waiting.args[0]
         else:
             self.use_var(func, func.args[0])
             acc.fopt.missing_args.remove(func[0])
-            self.ops.append((acc, acc[0], func.args[0]))
+            prev = acc[0]
 
-        acc.fopt.acc_count += 1
         if acc.fopt.acc_count == acc.n_args:
+            self.ops.append((acc, prev, func.args[0]))
             self.check_if_ready(acc)
 
     def do_accumulator(self, func: Func) -> None:
