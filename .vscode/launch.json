@@ -16,7 +16,10 @@
             "type": "debugpy",
             "request": "launch",
             "program": "examples/test_reorder.py",
-            "console": "integratedTerminal"
+            "console": "integratedTerminal",
+            "pythonArgs": [
+                // "-O"
+            ]
         }
     ]
 }

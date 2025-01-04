@@ -309,9 +309,9 @@ class Problem:
             new_func.rebind(func.outs[0])
 
     def split_acc(self) -> None:
+        i = 1
         for ftype in [ftypes.Sum, ftypes.Prod]:
-            for prod in self.funcs(ftype):
-                starter = ftypes.StartAcc(data=prod)
-                starter.rebind(prod.outs[0])
-                for arg in prod.args:
-                    self.root_funcs.append(ftypes.DoAcc(starter[0], arg, data=prod))
+            for accumulator in self.funcs(ftype):
+                args = [ftypes.Contribute(arg, unique_id=i)[0] for arg in accumulator.args]
+                ftype(*args).rebind(accumulator.outs[0])
+                i += 1

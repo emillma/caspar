@@ -1,11 +1,10 @@
 # CASPAR - Copyright 2024, Emil Martens, SFI Autoship, NTNU
 # This source code is under the Apache 2.0 license found in the LICENSE file.
 
-from collections import Counter
-from dataclasses import dataclass
-from dataclasses import field
-from typing import TYPE_CHECKING, ClassVar, Hashable
+
+from typing import TYPE_CHECKING
 from typing import Any
+from typing import Hashable
 from typing import Type
 
 if TYPE_CHECKING:
@@ -20,12 +19,13 @@ import symforce.symbolic as sf
 class Var:
     func: "Func"
     idx: int
-    # contribs: set["Func"] = field(default_factory=set)
+
     vopt: "VData"
 
-    def __init__(self, func: "Func", idx: int, *, _: None) -> None:
+    def __init__(self, func: "Func", idx: int) -> None:
         self.func = func
         self.idx = idx
+
         assert idx < func.n_outs
 
     def set_func(self, func: "Func") -> None:
@@ -33,6 +33,9 @@ class Var:
 
     def is_const(self) -> bool:
         return self.func.is_store()
+
+    def is_virtual(self) -> bool:
+        return self.func.is_contrib()
 
     def __hash__(self) -> int:
         return hash((self.func, self.idx))
@@ -66,7 +69,7 @@ class Func:
         self.data = data
         self.unique_id = unique_id
         self._hash = hash((self.__class__, self.args, self.data, self.unique_id))
-        self.outs = [Var(self, i, _=None) for i in range(self.n_outs)]
+        self.outs = [Var(self, i) for i in range(self.n_outs)]
 
         assert isinstance(data, (float, int, str, Func)) or data is None
         assert all([isinstance(arg, Var) for arg in self.args])
@@ -162,17 +165,11 @@ class Func:
     def is_rcbrt(self) -> bool:
         return isinstance(self, RCbrt)
 
-    # def is_acc(self) -> bool:
-    #     return isinstance(self, Accumulator)
-
     def is_anypow(self) -> bool:
         return isinstance(self, Exponent)
 
-    def is_zero_out(self) -> bool:
-        return isinstance(self, (Write,))
-
-    def is_two_out(self) -> bool:
-        return isinstance(self, (SinCos,))
+    def is_neg(self) -> bool:
+        return isinstance(self, Neg)
 
     def is_fma_none(self) -> bool:
         return isinstance(self, FmaNone)
@@ -195,14 +192,11 @@ class Func:
     def is_fmaprod(self) -> bool:
         return isinstance(self, FmaProd)
 
-    def is_neg(self) -> bool:
-        return isinstance(self, Neg)
+    def is_accumulator(self) -> bool:
+        return isinstance(self, Accumulator)
 
-    def is_start_acc(self) -> bool:
-        return isinstance(self, StartAcc)
-
-    def is_do_acc(self) -> bool:
-        return isinstance(self, DoAcc)
+    def is_contrib(self) -> bool:
+        return isinstance(self, Contribute)
 
 
 Func_T = Type[Func]
@@ -358,8 +352,7 @@ class StartAcc(Func):
         return f"nop"
 
 
-class DoAcc(Func):
-    n_outs = 0
+class Contribute(Func):
     data: Func
 
     def print(self, outs: list[Var], args: list[Var]) -> str:
