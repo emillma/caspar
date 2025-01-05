@@ -18,9 +18,9 @@ from symforce.values import Values
 
 
 class Problem:
-    def __init__(self, values: Values):
+    def __init__(self, arguments: Values, values: Values):
         # exprs = values.scalar_keys_recursive()
-
+        argmap = {v: k for v, k in zip(arguments.to_storage(), arguments.scalar_keys_recursive())}
         expr_map: dict[sf.Expr, Var] = {}
 
         def translate(expr: sf.Expr) -> Var:
@@ -32,18 +32,11 @@ class Problem:
 
             FType = TMAP[type(expr)]
             if expr.is_Symbol:
-                return expr_map.setdefault(expr, FType(data=expr.name)[0])
+                return expr_map.setdefault(expr, FType(data=argmap[expr])[0])
             else:
                 args = [translate(arg) for arg in expr.args]
                 func = FType(*args)
                 return expr_map.setdefault(expr, func[0])
-
-        # mapped = [translate(expr) for expr in exprs]
-        # root_vars = [var for var in mapped if isinstance(var, Var)]
-        exprs = [
-            sf.symbols(b) if a.is_symbol else a
-            for a, b in zip(values.to_storage(), values.scalar_keys_recursive())
-        ]
 
         self.root_funcs = [
             ftypes.Write(rv, data=sym)
@@ -59,7 +52,7 @@ class Problem:
         self.expand_prods()
         self.collect_pows()
         self.fix_sums()
-        # self.fix_minus()
+        self.fix_minus()
         self.fix_prods()
         self.fix_div()
         self.fix_sincos()

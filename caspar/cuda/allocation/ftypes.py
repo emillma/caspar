@@ -253,13 +253,10 @@ class Sum(Accumulator):
     def rhs(self, *args: str) -> str:
         return f"{args[0]} + {args[1]}"
 
-    def sym(self, *args: sf.Expr) -> sf.Expr:
-        return sf.Add(*args)
-
 
 class Minus(Func):
-    def sym(self, arg0: sf.Expr, arg1: sf.Expr) -> sf.Expr:
-        return arg0 - arg1
+    def rhs(self, *args: str) -> str:
+        return f"{args[0]} - {args[1]}"
 
 
 class Prod(Accumulator):
@@ -267,42 +264,27 @@ class Prod(Accumulator):
         a, b = args
         return f"{a} * {b}"
 
-    def sym(self, *args: sf.Expr) -> sf.Expr:
-        return sf.Mul(*args)
-
 
 class Neg(Func):
     def rhs(self, *args: str) -> str:
         (arg,) = args
         return f"-{arg}"
 
-    def sym(self, *args: sf.Expr) -> sf.Expr:
-        return -args[0]
-
 
 class Abs(Func):
     def rhs(self, *args: str) -> str:
         return f"abs({args[0]})"
-
-    def sym(self, *args: sf.Expr) -> sf.Expr:
-        return sf.Abs(args[0])
 
 
 class Sign(Func):
     def rhs(self, *args: str) -> str:
         return f"sign({args[0]})"
 
-    def sym(self, *args: sf.Expr) -> sf.Expr:
-        return sf.sign(args[0])
-
 
 class Div(Func):
     def rhs(self, *args: str) -> str:
         (arg0, arg1) = args
         return f"{arg0} / {arg1}"
-
-    def sym(self, arg0: sf.Expr, arg1: sf.Expr) -> sf.Expr:
-        return arg0 / arg1
 
 
 # TRIGONOMETRIC FUNCTIONS
@@ -356,14 +338,12 @@ class RNorm(Func):
 
 
 # EXPONENTS
-class Exponent(Func):
-    def print(self, outs: list[Var], args: list[Var]) -> str:
-        return f"{outs[0]} = pow({args[0]}, {args[1]})"
+class Exponent(Func): ...
 
 
 class Pow(Exponent):
-    def print(self, outs: list[Var], args: list[Var]) -> str:
-        return f"{outs[0]} = pow({args[0]}, {args[1]})"
+    def rhs(self, *args: str) -> str:
+        return f"{args[0]} ** {args[1]}"
 
 
 class Square(Exponent):

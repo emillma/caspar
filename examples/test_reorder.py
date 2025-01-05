@@ -1,28 +1,19 @@
 import itertools
-from random import randint
+from random import randint, random
 from typing import Iterable
 
 import symforce
 
 symforce.set_epsilon_to_symbol()
-# Setup
-import numpy as np
-import sympy
+symforce.set_symbolic_api("symengine")
+symforce.set_log_level("warning")
+
 
 import symforce.symbolic as sf
 from caspar.cuda.allocation import Problem
 from caspar.cuda.allocation import Solver
-from symforce.values import Values
-
-symforce.set_symbolic_api("symengine")
-symforce.set_log_level("warning")
-
-# Set epsilon to a symbol for safe code generation.  For more information, see the Epsilon tutorial:
-# https://symforce.org/tutorials/epsilon_tutorial.html
-
-import symforce.symbolic as sf
 from symforce import codegen
-from symforce.codegen import codegen_util
+from symforce.ops import StorageOps as Ops
 from symforce.values import Values
 
 
@@ -62,6 +53,30 @@ for f in az_el_codegen_data.generated_files:
     print("  |- {}".format(f))
 
 
+def verify(input: Values, output: Values, lines: list[str]) -> None:
+    locals().update(
+        {k: Ops.to_storage(v) if Ops.storage_dim(v) > 1 else v for k, v in inputs.items()}
+    )
+    locals().update({k: [None] * Ops.storage_dim(v) for k, v in exprs.items()})
+
+    rsqrt = lambda x: x**-0.5
+    min = sf.Min
+    max = sf.Max
+    acos = sf.acos
+    sign = sf.sign
+    sqrt = sf.sqrt
+    atan2 = sf.atan2
+    norm = lambda *x: sf.Add(*[i**2 for i in x]) ** 0.5
+    for line in lines:
+        exec(line)
+
+    for k, v in output.items():
+        for va, vb in zip(Ops.to_storage(locals()[k]), Ops.to_storage(v)):
+            if not va == vb:
+                vmap = {s: random() for s in va.free_symbols}
+                assert abs(va.subs(vmap).evalf() - vb.subs(vmap).evalf()) < 1e-12
+
+
 def tmp_symbols() -> Iterable[sf.Symbol]:
     for i in itertools.count():
         yield sf.Symbol(f"_tmp{i}")
@@ -87,11 +102,21 @@ if __name__ == "__main__":
 
         B.subs((B[0], B[1]), (B[1], B[0]))
         # exprs = A.inv().to_storage()
-        exprs = Values(foo=(A * B), bar=sf.Pose3.symbolic("pose").to_tangent())
+        inputs = Values(a=A, b=B, p=sf.Pose3.symbolic("pose"), eps=sf.epsilon())
+        exprs = Values(
+            # foo=(A * B),
+            bar=sf.Pose3.symbolic("pose").to_tangent(),
+            normed=A.row(0).norm(0),
+        )
+        # inputs = Values(eps=sf.epsilon())
+        # exprs = Values(out=sf.epsilon())
         # exprs = Values(bar=exprs, baz=sf.Pose2.symbolic("pose"))
-        funcs = list(Problem(exprs).funcs())
-        # aff1, aff2 = prepare(funcs)
-        reorderer = Solver(funcs)
+
+        prob = Problem(inputs, exprs)
+
+        reorderer = Solver(list(prob.funcs()))
         reorderer.reorder()
-        reorderer.format_reordering()
+        lines = reorderer.format_reordering()
+
+        verify(inputs, exprs, lines)
         # reorderer.get_cse(tmp_symbols())

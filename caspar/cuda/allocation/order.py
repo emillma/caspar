@@ -78,8 +78,8 @@ class FData:
             done = set()
         elif self.func in done:
             return
-        # for arg in self.missing_args:
-        #     arg.func.fopt.update_aff1(val=val, priority=priority, done=done)
+        for arg in self.missing_args:
+            arg.func.fopt.update_aff1(val=val, priority=priority, done=done)
         done.add(self.func)
 
 
@@ -214,13 +214,14 @@ class Solver:
             acc.fopt.missing_args.remove(acc.fopt.acc_waiting[0])
             acc.fopt.missing_args.remove(func[0])
             prev = acc.fopt.acc_waiting.args[0]
+            self.ops.append((acc, prev, func.args[0]))
         else:
             self.use_var(func, func.args[0])
             acc.fopt.missing_args.remove(func[0])
             prev = acc[0]
+            self.ops.append((acc, prev, func.args[0]))
 
         if acc.fopt.acc_count == acc.n_args:
-            self.ops.append((acc, prev, func.args[0]))
             self.check_if_ready(acc)
 
     def do_accumulator(self, func: Func) -> None:
@@ -256,21 +257,21 @@ class Solver:
         print("Time: ", time.perf_counter() - t0)
         print(self.max_stack)
 
-    def format_reordering(self) -> None:
+    def format_reordering(self) -> list[str]:
         func: Func
-        argmap = dict[Var, str]
+        lines = []
         for func in self.ops:
             if isinstance(func, tuple):
                 func, *args = func
             else:
                 args = func.args
-
             arg_str = [f"r{a.vopt.register_ssa}" for a in args]
             out_str = [f"r{a.vopt.register_ssa}" for a in func.outs]
+            assert all([a.vopt.register_ssa != -1 for a in args])
 
             line = f"{func.lhs(*out_str)}{func.rhs(*arg_str)}"
-            print(line)
-        print(self.max_stack)
+            lines.append(line)
+        return lines
 
     def get_cse(self, symbols: Iterable[sf.Symbol]) -> None:
         tmp2expr: dict[Var, sf.Expr] = {}
