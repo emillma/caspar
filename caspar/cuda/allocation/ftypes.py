@@ -2,7 +2,7 @@
 # This source code is under the Apache 2.0 license found in the LICENSE file.
 
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Generator, Iterable
 from typing import Any
 from typing import Hashable
 from typing import Type
@@ -89,6 +89,15 @@ class Func:
         assert args == self.args
         assert hash(args) == hash(self.args)
         self.args = args
+
+    def sym(self, *args: sf.Expr) -> sf.Expr:
+        raise NotImplementedError
+
+    def rhs(self, *args: str) -> str:
+        raise NotImplementedError
+
+    def lhs(self, *vars: str) -> str:
+        return f"{vars[0]} = "
 
     def __getitem__(self, idx: int) -> Var:
         return self.outs[idx]
@@ -199,23 +208,29 @@ class Func:
         return isinstance(self, Contribute)
 
 
-Func_T = Type[Func]
-
-
 class Accumulator(Func):
     n_outs = 1
 
 
 class Write(Func):
-    def print(self, _: list[Var], args: list[Var]) -> str:
-        return f"{self.data} = {args[0]}"
-
     n_outs = 0
+
+    def lhs(self, *vars: str) -> str:
+        return f"{self.data} = "
+
+    def rhs(self, *args: str) -> str:
+        return f"{args[0]}"
+
+    def sym(self, *args: sf.Expr) -> sf.Expr:
+        return sf.symbols(self.data)
 
 
 class Read(Func):
-    def print(self, outs: list[Var], _: list[Var]) -> str:
-        return f"{outs[0]} = {self.data}"
+    def rhs(self, *args: str) -> str:
+        return f"{self.data}"
+
+    def sym(self, *args: sf.Expr) -> sf.Expr:
+        return sf.Symbol(self.data)
 
     def __repr__(self) -> str:
         return str(self.data)
@@ -224,45 +239,73 @@ class Read(Func):
 class Store(Func):
     data: float
 
-    def print(self, outs: list[Var], _: list[Var]) -> str:
-        return f"{outs[0]} = {self.data}"
+    def rhs(self, *args: str) -> str:
+        return str(self.data)
+
+    def sym(self, *args: sf.Expr) -> sf.Expr:
+        return sf.Float(self.data)
 
     def __repr__(self) -> str:
         return str(self.data)
 
 
 class Sum(Accumulator):
-    def print(self, outs: list[Var], args: list[Var]) -> str:
-        return f"{outs[0]} = ({args[0]} + {args[1]})"
+    def rhs(self, *args: str) -> str:
+        return f"{args[0]} + {args[1]}"
+
+    def sym(self, *args: sf.Expr) -> sf.Expr:
+        return sf.Add(*args)
 
 
 class Minus(Func):
-    def print(self, outs: list[Var], args: list[Var]) -> str:
-        return f"{outs[0]} = ({args[0]} - {args[1]})"
+    def sym(self, arg0: sf.Expr, arg1: sf.Expr) -> sf.Expr:
+        return arg0 - arg1
 
 
 class Prod(Accumulator):
-    def print(self, outs: list[Var], args: list[Var]) -> str:
-        return f"{outs[0]} = ({args[0]} * {args[1]})"
+    def rhs(self, *args: str) -> str:
+        a, b = args
+        return f"{a} * {b}"
+
+    def sym(self, *args: sf.Expr) -> sf.Expr:
+        return sf.Mul(*args)
 
 
 class Neg(Func):
-    def print(self, outs: list[Var], args: list[Var]) -> str:
-        return f"{outs[0]} = -{args[0]}"
+    def rhs(self, *args: str) -> str:
+        (arg,) = args
+        return f"-{arg}"
+
+    def sym(self, *args: sf.Expr) -> sf.Expr:
+        return -args[0]
+
+
+class Abs(Func):
+    def rhs(self, *args: str) -> str:
+        return f"abs({args[0]})"
+
+    def sym(self, *args: sf.Expr) -> sf.Expr:
+        return sf.Abs(args[0])
+
+
+class Sign(Func):
+    def rhs(self, *args: str) -> str:
+        return f"sign({args[0]})"
+
+    def sym(self, *args: sf.Expr) -> sf.Expr:
+        return sf.sign(args[0])
 
 
 class Div(Func):
-    def print(self, outs: list[Var], args: list[Var]) -> str:
-        return f"{outs[0]} = ({args[0]} / {args[1]})"
+    def rhs(self, *args: str) -> str:
+        (arg0, arg1) = args
+        return f"{arg0} / {arg1}"
+
+    def sym(self, arg0: sf.Expr, arg1: sf.Expr) -> sf.Expr:
+        return arg0 / arg1
 
 
-class SinCos(Func):
-    n_outs = 2
-
-    def print(self, outs: list[Var], args: list[Var]) -> str:
-        return f"{outs[0]}, {outs[1]} = sincos({args[0]})"
-
-
+# TRIGONOMETRIC FUNCTIONS
 class Cos(Func):
     def print(self, outs: list[Var], args: list[Var]) -> str:
         return f"{outs[0]} = cos({args[0]})"
@@ -273,16 +316,46 @@ class Sin(Func):
         return f"{outs[0]} = sin({args[0]})"
 
 
+class Tan(Func):
+    def rhs(self, *args: str) -> str:
+        return f"tan({args[0]})"
+
+
+class ACos(Func):
+    def rhs(self, *args: str) -> str:
+        return f"acos({args[0]})"
+
+
+class ASin(Func):
+    def rhs(self, *args: str) -> str:
+        return f"asin({args[0]})"
+
+
+class ATan(Func):
+    def rhs(self, *args: str) -> str:
+        return f"atan({args[0]})"
+
+
+class SinCos(Func):
+    n_outs = 2
+
+    def rhs(self, *args: str) -> str:
+        (arg,) = args
+        return f"sincos({arg})"
+
+
+# NORMS
 class Norm(Func):
-    def print(self, outs: list[Var], args: list[Var]) -> str:
-        return f"{outs[0]} = norm({args[0]})"
+    def rhs(self, *args: str) -> str:
+        return f"norm({','.join(args)})"
 
 
 class RNorm(Func):
-    def print(self, outs: list[Var], args: list[Var]) -> str:
-        return f"{outs[0]} = rnorm({args[0]})"
+    def rhs(self, *args: str) -> str:
+        return f"rnorm({','.join(args)})"
 
 
+# EXPONENTS
 class Exponent(Func):
     def print(self, outs: list[Var], args: list[Var]) -> str:
         return f"{outs[0]} = pow({args[0]}, {args[1]})"
@@ -294,35 +367,36 @@ class Pow(Exponent):
 
 
 class Square(Exponent):
-    def print(self, outs: list[Var], args: list[Var]) -> str:
-        return f"{outs[0]} = {args[0]}*{args[0]}"
+    def rhs(self, *args: str) -> str:
+        return f"{args[0]} * {args[0]}"
 
 
 class Rcp(Exponent):
-    def print(self, outs: list[Var], args: list[Var]) -> str:
-        return f"{outs[0]} = 1.0/{args[0]}"
+    def rhs(self, *args: str) -> str:
+        return f"rcp({args[0]})"
 
 
 class Sqrt(Exponent):
-    def print(self, outs: list[Var], args: list[Var]) -> str:
-        return f"{outs[0]} = sqrt({args[0]})"
+    def rhs(self, *args: str) -> str:
+        return f"sqrt({args[0]})"
 
 
 class RSqrt(Exponent):
-    def print(self, outs: list[Var], args: list[Var]) -> str:
-        return f"{outs[0]} = rsqrt({args[0]})"
+    def rhs(self, *args: str) -> str:
+        return f"rsqrt({args[0]})"
 
 
 class Cbrt(Exponent):
-    def print(self, outs: list[Var], args: list[Var]) -> str:
-        return f"{outs[0]} = cbrt({args[0]})"
+    def rhs(self, *args: str) -> str:
+        return f"cbrt({args[0]})"
 
 
 class RCbrt(Exponent):
-    def print(self, outs: list[Var], args: list[Var]) -> str:
-        return f"{outs[0]} = rcbrt({args[0]})"
+    def rhs(self, *args: str) -> str:
+        return f"rcbrt({args[0]})"
 
 
+# FUSED MULTIPLY-ADD
 class FmaProd(Prod): ...
 
 
@@ -343,11 +417,15 @@ class Fma(Sum):
 class FmaNone(Fma): ...
 
 
-class StartAcc(Func):
-    data: Func
+# MIN MAX
+class Min(Accumulator):
+    def rhs(self, *args: str) -> str:
+        return f"min({args[0]}, {args[1]})"
 
-    def print(self, outs: list[Var], args: list[Var]) -> str:
-        return f"nop"
+
+class Max(Accumulator):
+    def rhs(self, *args: str) -> str:
+        return f"max({args[0]}, {args[1]}"
 
 
 class Contribute(Func):
@@ -366,10 +444,19 @@ two_out_funcs = {SinCos}
 
 
 TMAP: dict[Type[sf.Expr], Type[Func]] = {
+    sf.Symbol: Read,
+    symengine_wrapper.Symbol: Read,
     sf.Add: Sum,
     sf.Mul: Prod,
     sf.Pow: Pow,
-    sf.Symbol: Read,
     symengine_wrapper.cos: Cos,
     symengine_wrapper.sin: Sin,
+    symengine_wrapper.tan: Tan,
+    symengine_wrapper.acos: ACos,
+    symengine_wrapper.asin: ASin,
+    symengine_wrapper.atan: ATan,
+    symengine_wrapper.sign: Sign,
+    sf.Min: Min,
+    sf.Max: Max,
+    sf.Abs: Abs,
 }

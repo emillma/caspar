@@ -14,10 +14,13 @@ from . import ftypes
 from .ftypes import TMAP
 from .ftypes import Func
 from .ftypes import Var
+from symforce.values import Values
 
 
 class Problem:
-    def __init__(self, exprs: list[sf.Expr]):
+    def __init__(self, values: Values):
+        # exprs = values.scalar_keys_recursive()
+
         expr_map: dict[sf.Expr, Var] = {}
 
         def translate(expr: sf.Expr) -> Var:
@@ -35,9 +38,20 @@ class Problem:
                 func = FType(*args)
                 return expr_map.setdefault(expr, func[0])
 
-        mapped = [translate(expr) for expr in exprs]
-        root_vars = [var for var in mapped if isinstance(var, Var)]
-        self.root_funcs = [ftypes.Write(rv, data=i) for i, rv in enumerate(root_vars)]
+        # mapped = [translate(expr) for expr in exprs]
+        # root_vars = [var for var in mapped if isinstance(var, Var)]
+        exprs = [
+            sf.symbols(b) if a.is_symbol else a
+            for a, b in zip(values.to_storage(), values.scalar_keys_recursive())
+        ]
+
+        self.root_funcs = [
+            ftypes.Write(rv, data=sym)
+            for rv, sym in zip(
+                [translate(expr) for expr in values.to_storage()],
+                values.scalar_keys_recursive(),
+            )
+        ]
         ls = list(self.root_funcs)
         assert next(iter(self.root_funcs)) in self.root_funcs
 
@@ -313,9 +327,7 @@ class Problem:
             new_func.rebind(func.outs[0])
 
     def split_acc(self) -> None:
-        i = 1
-        for ftype in [ftypes.Sum, ftypes.Prod]:
-            for accumulator in list(self.funcs(ftype)):
-                args = [ftypes.Contribute(arg, unique_id=i)[0] for arg in accumulator.args]
-                ftype(*args).rebind(accumulator[0])
-                i += 1
+        todo = [f for f in self.funcs() if f.is_accumulator()]
+        for i, func in enumerate(todo):
+            args = [ftypes.Contribute(arg, unique_id=i)[0] for arg in func.args]
+            func.__class__(*args).rebind(func[0])

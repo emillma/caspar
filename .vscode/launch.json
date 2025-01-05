@@ -17,6 +17,7 @@
             "request": "launch",
             "program": "examples/test_reorder.py",
             "console": "integratedTerminal",
+            "justMyCode": false,
             "pythonArgs": [
                 // "-O"
             ]

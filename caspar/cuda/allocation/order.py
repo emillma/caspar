@@ -1,14 +1,14 @@
 # CASPAR - Copyright 2024, Emil Martens, SFI Autoship, NTNU
 # This source code is under the Apache 2.0 license found in the LICENSE file.
 
+import itertools
+import time
 from collections import Counter
 from dataclasses import dataclass
 from dataclasses import field
-from itertools import combinations
-from itertools import product
-from pprint import pprint
-import time
-from typing import Iterable
+from typing import Generator, Iterable
+
+import symforce.symbolic as sf
 
 from . import ftypes
 from .ftypes import Func
@@ -170,12 +170,8 @@ class Solver:
     def check_if_ready(self, func: Func) -> None:
         """Check if a function is ready"""
         assert func.fopt.is_not_ready()
-        if not func.fopt.is_not_ready():
-            return
-        else:
-            ready = not func.fopt.missing_args
 
-        if ready:
+        if not func.fopt.missing_args:
             func.fopt.mark_ready()
             self.ready.insert(0, func)
 
@@ -255,17 +251,14 @@ class Solver:
                 self.do_accumulator(func)
             else:
                 self.do_func(func)
-
+            None
         # assert all(f.fopt.is_finished() for f in self.funcs)
         print("Time: ", time.perf_counter() - t0)
         print(self.max_stack)
 
     def format_reordering(self) -> None:
-        ssa_regmap = {}
-        regmap = ssa_regmap
-        count = 0
-        print("")
-
+        func: Func
+        argmap = dict[Var, str]
         for func in self.ops:
             if isinstance(func, tuple):
                 func, *args = func
@@ -273,7 +266,27 @@ class Solver:
                 args = func.args
 
             arg_str = [f"r{a.vopt.register_ssa}" for a in args]
-
             out_str = [f"r{a.vopt.register_ssa}" for a in func.outs]
-            print(f"{func.print(out_str, arg_str):<50}")
+
+            line = f"{func.lhs(*out_str)}{func.rhs(*arg_str)}"
+            print(line)
         print(self.max_stack)
+
+    def get_cse(self, symbols: Iterable[sf.Symbol]) -> None:
+        tmp2expr: dict[Var, sf.Expr] = {}
+        arg2tmp: dict[Var, sf.Expr] = {}
+        iterable = iter(symbols)
+        func: Func
+        args: tuple[Var, ...]
+        for func in self.ops:
+            if isinstance(func, tuple):
+                func, *args = func
+            else:
+                args = func.args
+            if func.is_write():
+                continue
+            assert func.n_outs == 1
+            tmp = next(iterable)
+            arg2tmp[func[0]] = tmp
+            tmp2expr[tmp] = func.sym(*(arg2tmp[arg] for arg in args))
+        None
